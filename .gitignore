@@ -1,0 +1,56 @@
+# Dataset & archivos heredados (nunca versionar)
+dataset/
+_legacy/
+
+# Pesos de modelos y artefactos pesados (van a Hugging Face Hub)
+models/*.joblib
+models/*.pkl
+models/*.pt
+models/*.pth
+models/*.onnx
+models/*.onnx.data
+models/*.cbm
+models/*.lgb
+models/*.ubj
+*.cp
+
+# Datos generados, rasters, vectores y base de datos local
+data/flood.db
+data/flood.db-*
+data/stacks/
+data/outputs/
+data/demo_chips/
+data/colab/
+*.zip
+*.tif
+*.tiff
+*.gpkg
+*.npy
+*.npz
+
+# Secretos y entorno local
+.env
+.env.*
+!.env.example
+*service-account*.json
+*gee*.json
+credentials*.json
+
+# Python / entornos / caches
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+*.egg-info/
+dist/
+build/
+
+# SO / editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

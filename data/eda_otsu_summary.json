@@ -1,0 +1,264 @@
+{
+  "splits": {
+    "train": {
+      "chips": 252,
+      "s1_nan_chips": 23,
+      "s2_nan_chips": 0,
+      "s1_nan_pct": 2.01,
+      "label_minus1_pct": 13.26,
+      "water_pct_of_valid": 9.51,
+      "otsu_metrics": {
+        "iou": 0.4513072246169555,
+        "f1": 0.6219320306023686,
+        "precision": 0.5691476608385464,
+        "recall": 0.6855079873729469,
+        "tp": 3733986,
+        "fp": 2826677,
+        "fn": 1713049,
+        "tn": 49029695,
+        "valid_pixels": 57303407,
+        "ignored_pixels": 8756881,
+        "gt_water_pct": 9.5056040908702,
+        "pred_water_pct": 11.448992901940368
+      },
+      "otsu_metrics_s1_valid_only": {
+        "iou": 0.45162416352210083,
+        "f1": 0.6222329096896779,
+        "precision": 0.5696324500169186,
+        "recall": 0.6855360276484125,
+        "tp": 3733894,
+        "fp": 2821024,
+        "fn": 1712784,
+        "tn": 49011555,
+        "valid_pixels": 57279257,
+        "ignored_pixels": 8781031,
+        "gt_water_pct": 9.508988568060511,
+        "pred_water_pct": 11.443790201398736
+      }
+    },
+    "valid": {
+      "chips": 89,
+      "s1_nan_chips": 9,
+      "s2_nan_chips": 0,
+      "s1_nan_pct": 0.94,
+      "label_minus1_pct": 13.01,
+      "water_pct_of_valid": 11.03,
+      "otsu_metrics": {
+        "iou": 0.5056197446647244,
+        "f1": 0.6716433501306364,
+        "precision": 0.6328523650036149,
+        "recall": 0.7155002781992353,
+        "tp": 1601007,
+        "fp": 928820,
+        "fn": 636598,
+        "tn": 17128300,
+        "valid_pixels": 20294725,
+        "ignored_pixels": 3036091,
+        "gt_water_pct": 11.025549742605529,
+        "pred_water_pct": 12.465441142957099
+      },
+      "otsu_metrics_s1_valid_only": {
+        "iou": 0.5066616186886799,
+        "f1": 0.6725619241958947,
+        "precision": 0.6339754246332938,
+        "recall": 0.7161499207155233,
+        "tp": 1597878,
+        "fp": 922532,
+        "fn": 633328,
+        "tn": 17120416,
+        "valid_pixels": 20274154,
+        "ignored_pixels": 3056662,
+        "gt_water_pct": 11.005174371270929,
+        "pred_water_pct": 12.43164079744092
+      }
+    },
+    "test": {
+      "chips": 90,
+      "s1_nan_chips": 6,
+      "s2_nan_chips": 0,
+      "s1_nan_pct": 2.38,
+      "label_minus1_pct": 13.04,
+      "water_pct_of_valid": 12.51,
+      "otsu_metrics": {
+        "iou": 0.5458456321591642,
+        "f1": 0.7062097544587977,
+        "precision": 0.6811499390506381,
+        "recall": 0.7331839237816439,
+        "tp": 1881424,
+        "fp": 880705,
+        "fn": 684677,
+        "tn": 17070561,
+        "valid_pixels": 20517367,
+        "ignored_pixels": 3075593,
+        "gt_water_pct": 12.50697031446579,
+        "pred_water_pct": 13.462395052932475
+      },
+      "otsu_metrics_s1_valid_only": {
+        "iou": 0.5544621126912128,
+        "f1": 0.7133813145581045,
+        "precision": 0.6820176893972775,
+        "recall": 0.7477685955670916,
+        "tp": 1880644,
+        "fp": 876827,
+        "fn": 634364,
+        "tn": 17052124,
+        "valid_pixels": 20443959,
+        "ignored_pixels": 3149001,
+        "gt_water_pct": 12.301961669948565,
+        "pred_water_pct": 13.487950156816494
+      }
+    },
+    "bolivia": {
+      "chips": 15,
+      "s1_nan_chips": 8,
+      "s2_nan_chips": 0,
+      "s1_nan_pct": 10.33,
+      "label_minus1_pct": 27.07,
+      "water_pct_of_valid": 15.86,
+      "otsu_metrics": {
+        "iou": 0.6972009323151904,
+        "f1": 0.8215891460348455,
+        "precision": 0.7809091251220638,
+        "recall": 0.8667403883358542,
+        "tp": 394249,
+        "fp": 110610,
+        "fn": 60615,
+        "tn": 2302341,
+        "valid_pixels": 2867815,
+        "ignored_pixels": 1064345,
+        "gt_water_pct": 15.86099521761341,
+        "pred_water_pct": 17.604308506650533
+      },
+      "otsu_metrics_s1_valid_only": {
+        "iou": 0.7176270543246636,
+        "f1": 0.8356028772576828,
+        "precision": 0.8034709356124285,
+        "recall": 0.8704118822485456,
+        "tp": 393340,
+        "fp": 96211,
+        "fn": 58561,
+        "tn": 2276322,
+        "valid_pixels": 2824434,
+        "ignored_pixels": 1107726,
+        "gt_water_pct": 15.99970117906809,
+        "pred_water_pct": 17.332711615849405
+      }
+    }
+  },
+  "events": {
+    "Bolivia": {
+      "chips": 15,
+      "s1_nan_chips": 8,
+      "label_minus1_pct": 27.07,
+      "water_pct_of_valid": 15.86,
+      "otsu_iou": 0.6972,
+      "otsu_f1": 0.8216,
+      "otsu_precision": 0.7809,
+      "otsu_recall": 0.8667
+    },
+    "Ghana": {
+      "chips": 53,
+      "s1_nan_chips": 6,
+      "label_minus1_pct": 33.83,
+      "water_pct_of_valid": 6.28,
+      "otsu_iou": 0.4084,
+      "otsu_f1": 0.5799,
+      "otsu_precision": 0.8069,
+      "otsu_recall": 0.4526
+    },
+    "India": {
+      "chips": 68,
+      "s1_nan_chips": 7,
+      "label_minus1_pct": 15.97,
+      "water_pct_of_valid": 12.39,
+      "otsu_iou": 0.5285,
+      "otsu_f1": 0.6915,
+      "otsu_precision": 0.8177,
+      "otsu_recall": 0.5991
+    },
+    "Mekong": {
+      "chips": 30,
+      "s1_nan_chips": 3,
+      "label_minus1_pct": 9.32,
+      "water_pct_of_valid": 24.12,
+      "otsu_iou": 0.7799,
+      "otsu_f1": 0.8763,
+      "otsu_precision": 0.9772,
+      "otsu_recall": 0.7943
+    },
+    "Nigeria": {
+      "chips": 18,
+      "s1_nan_chips": 3,
+      "label_minus1_pct": 14.31,
+      "water_pct_of_valid": 23.46,
+      "otsu_iou": 0.6426,
+      "otsu_f1": 0.7824,
+      "otsu_precision": 0.9522,
+      "otsu_recall": 0.664
+    },
+    "Pakistan": {
+      "chips": 28,
+      "s1_nan_chips": 1,
+      "label_minus1_pct": 26.75,
+      "water_pct_of_valid": 7.5,
+      "otsu_iou": 0.1518,
+      "otsu_f1": 0.2636,
+      "otsu_precision": 0.1627,
+      "otsu_recall": 0.6942
+    },
+    "Paraguay": {
+      "chips": 67,
+      "s1_nan_chips": 6,
+      "label_minus1_pct": 5.04,
+      "water_pct_of_valid": 8.39,
+      "otsu_iou": 0.4401,
+      "otsu_f1": 0.6112,
+      "otsu_precision": 0.4783,
+      "otsu_recall": 0.8464
+    },
+    "Somalia": {
+      "chips": 26,
+      "s1_nan_chips": 2,
+      "label_minus1_pct": 21.13,
+      "water_pct_of_valid": 6.51,
+      "otsu_iou": 0.1506,
+      "otsu_f1": 0.2617,
+      "otsu_precision": 0.171,
+      "otsu_recall": 0.5581
+    },
+    "Spain": {
+      "chips": 30,
+      "s1_nan_chips": 0,
+      "label_minus1_pct": 1.74,
+      "water_pct_of_valid": 13.15,
+      "otsu_iou": 0.6696,
+      "otsu_f1": 0.8021,
+      "otsu_precision": 0.9281,
+      "otsu_recall": 0.7063
+    },
+    "Sri-Lanka": {
+      "chips": 42,
+      "s1_nan_chips": 1,
+      "label_minus1_pct": 9.51,
+      "water_pct_of_valid": 11.8,
+      "otsu_iou": 0.6487,
+      "otsu_f1": 0.7869,
+      "otsu_precision": 0.8061,
+      "otsu_recall": 0.7686
+    },
+    "USA": {
+      "chips": 69,
+      "s1_nan_chips": 9,
+      "label_minus1_pct": 2.44,
+      "water_pct_of_valid": 4.56,
+      "otsu_iou": 0.5079,
+      "otsu_f1": 0.6737,
+      "otsu_precision": 0.646,
+      "otsu_recall": 0.7038
+    }
+  },
+  "integrity": {
+    "missing_files_count": 0,
+    "missing_files_sample": []
+  }
+}

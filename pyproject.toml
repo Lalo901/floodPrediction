@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flood-mapper"
+version = "0.1.0"
+description = "Flood water detection MVP using Sentinel-1/2 + terrain (Sen1Floods11) with Streamlit, SQLite, and AI assistant"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    # App & Map
+    "streamlit>=1.39,<2.0",
+    "streamlit-folium>=0.23",
+    "folium>=0.17",
+    # Geospatial & Raster
+    "numpy>=1.26,<2.3",
+    "pandas>=2.2",
+    "scipy>=1.13",
+    "rasterio>=1.4",
+    "geopandas>=1.0",
+    "shapely>=2.0",
+    "pyproj>=3.6",
+    "scikit-image>=0.24",
+    "pillow>=10.4",
+    # ML & ONNX CPU inference
+    "scikit-learn>=1.5",
+    "lightgbm>=4.5",
+    "joblib>=1.4",
+    "onnxruntime>=1.19",
+    # Data & Hub
+    "huggingface-hub>=0.25",
+    "pydantic>=2.9",
+    "python-dotenv>=1.0",
+    "requests>=2.32",
+]
+
+[project.optional-dependencies]
+train = [
+    "optuna>=4.0",
+    "xgboost>=2.1",
+    "matplotlib>=3.9",
+    "tqdm>=4.66",
+]
+gee = [
+    "earthengine-api>=1.2",
+]
+ai = [
+    "anthropic>=0.39",
+    "openai>=1.55",
+]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.7",
+]
+
+[tool.setuptools.packages.find]
+include = ["core*", "app*", "ai*", "training*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
