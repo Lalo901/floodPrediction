@@ -42,10 +42,13 @@ Métrica principal: **Flood IoU** (índice Jaccard de la clase agua acumulado gl
   - **Modo Offline:** chips `HandLabeled` de Sen1Floods11 con cálculo de **Flood IoU en vivo** y capa **Mapa de Errores (`TP` verde / `FP` rojo / `FN` amarillo)** contra `LabelHand`.
   - **Subida de GeoTIFF:** S1 (VV, VH en dB) + opcional S2 y enriquecimiento automático de terreno vía GEE.
   - **Polígono en vivo (Google Earth Engine):** dibujo en mapa `streamlit-folium` (máx. 20 km/lado), clip exacto al polígono, máscara de nubes **Cloud Score+** sobre el polígono y consulta de escenas S1/S2 con paridad verificada (`corr = 1.0000`).
-- **Postproceso uniforme y analítica rigurosa ([`core/postproc.py`](core/postproc.py), [`core/analytics.py`](core/analytics.py)):**
-  - Separación de agua permanente (JRC / MERIT `wat`), filtro de mediana, área mínima configurable.
-  - Cálculo exacto de **hectáreas en CRS métrico UTM** y estadísticas zonales (`Slope`, `HAND`, `DEM_rel`).
-  - Exportación **GeoTIFF**, **GeoJSON** y **GeoPackage (`.gpkg`)** + registro en **SQLite (`data/flood.db`)**.
+- **Postproceso uniforme y analítica operativa ([`core/postproc.py`](core/postproc.py), [`core/analytics.py`](core/analytics.py)):**
+  - Paleta estándar Copernicus EMS (agua permanente azul marino vs inundación nueva azul cian), capas **NDWI/MNDWI**, **Probabilidad/Confianza**, **HAND < 2 m** y **Slope**.
+  - **Comparación directa de 2 modelos** en una sola corrida (`Δ ha`, `Δ Flood IoU` y capa de consenso/discrepancia).
+  - **Semáforo de Confiabilidad**, desglose de **Alta Confianza (`P ≥ 80%`)**, **Top 5 Focos Críticos** con coordenadas y enlaces a Google Maps, estadísticas zonales y cálculo de **hectáreas en CRS métrico UTM**.
+  - Exportación **GeoTIFF**, **GeoJSON** y **GeoPackage (`.gpkg`)**, guardado offline en `data/stacks/` y registro en **SQLite (`data/flood.db`)**.
+
+📘 **Guía completa de uso para operadores y usuarios finales:** [DOCUMENTACION.md](DOCUMENTACION.md)
 
 ---
 
@@ -84,10 +87,12 @@ docker run -p 8501:8501 -e APP_MODE=local flood-mapper
 
 ```text
 ├── AGENTS.md                 # Reglas operativas del repositorio
+├── DOCUMENTACION.md          # Guía de uso para usuarios finales
 ├── Agent/
 │   ├── spec.md               # Especificación técnica y contratos
 │   ├── plan.md               # Plan por fases y estado actual
-│   └── decisions.md          # Bitácora de decisiones y resultados
+│   ├── decisions.md          # Bitácora de decisiones y resultados
+│   └── auditoria.md          # Auditoría técnica, científica y de seguridad
 ├── app/                      # Interfaz Streamlit + streamlit-folium
 ├── core/                     # db, registry, metrics, features, data, inference, postproc, analytics
 ├── ai/                       # Asistente IA con herramientas acotadas (Fase 4)

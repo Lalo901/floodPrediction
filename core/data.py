@@ -196,6 +196,36 @@ def load_offline_scene(stem: str, db_path: Path | str = DEFAULT_DB_PATH) -> Scen
     )
 
 
+def save_scene_as_demo_stack(scene: SceneBundle, stack_name: str | None = None) -> str:
+    """Persist a SceneBundle (S1, optional S2 & Terrain) into `data/stacks/` for offline demo reuse."""
+    stem = sanitize_scene_id(stack_name or scene.scene_id)
+    DEMO_STACKS_DIR.mkdir(parents=True, exist_ok=True)
+
+    base_prof = scene.profile.copy()
+    base_prof.update(driver="GTiff", compress="deflate", nodata=None)
+
+    s1_prof = base_prof.copy()
+    s1_prof.update(count=2, dtype="float32")
+    with rasterio.open(DEMO_STACKS_DIR / f"{stem}_S1Hand.tif", "w", **s1_prof) as dst:
+        dst.write(scene.s1.astype(np.float32))
+        dst.descriptions = ("VV", "VH")
+
+    if scene.terrain is not None:
+        t_prof = base_prof.copy()
+        t_prof.update(count=scene.terrain.shape[0], dtype="float32")
+        with rasterio.open(DEMO_STACKS_DIR / f"{stem}_TerrainHand.tif", "w", **t_prof) as dst:
+            dst.write(scene.terrain.astype(np.float32))
+            dst.descriptions = ("slope", "hand", "dem_rel", "merit_wat")[: scene.terrain.shape[0]]
+
+    if scene.s2 is not None:
+        s2_prof = base_prof.copy()
+        s2_prof.update(count=scene.s2.shape[0], dtype="float32")
+        with rasterio.open(DEMO_STACKS_DIR / f"{stem}_S2Hand.tif", "w", **s2_prof) as dst:
+            dst.write(scene.s2.astype(np.float32))
+
+    return stem
+
+
 # ---------------------------------------------------------------------------
 # 2. Uploaded GeoTIFF loader
 # ---------------------------------------------------------------------------

@@ -83,14 +83,48 @@ def test_sanitize_scene_id_and_metric_dem_rel():
 
 
 def test_layers_error_map_and_data_url():
+    from app.layers import (
+        render_comparison_rgba,
+        render_low_hand_rgba,
+        render_probability_rgba,
+        render_water_index_rgba,
+    )
+    from core.analytics import compute_confidence_breakdown, compute_scene_reliability_badge
+
     y_true = np.array([[-1, 1], [0, 1]], dtype=np.int16)
     y_pred = np.array([[1, 1], [1, 0]], dtype=np.uint8)
     valid = np.ones((2, 2), dtype=bool)
     err = render_error_map_rgba(y_true, y_pred, valid)
-    assert tuple(err[0, 0]) == (0, 0, 0, 0)       # -1 ignored -> transparent
-    assert err[0, 1, 1] > 150                     # TP -> green
+    assert tuple(err[0, 0]) == (0, 0, 0, 0)           # -1 ignored -> transparent
+    assert err[0, 1, 1] > 150                         # TP -> green
     assert err[1, 0, 0] > 150 and err[1, 0, 1] < 100  # FP -> red
     assert err[1, 1, 0] > 150 and err[1, 1, 1] > 150  # FN -> yellow
+
+    # 2-model comparison layer
+    m1 = np.array([[1, 1], [0, 0]], dtype=np.uint8)
+    m2 = np.array([[1, 0], [1, 0]], dtype=np.uint8)
+    cmp = render_comparison_rgba(m1, m2, valid)
+    assert cmp[0, 0, 2] == 255    # consensus -> blue
+    assert cmp[0, 1, 0] == 249    # only M1 -> orange
+    assert cmp[1, 0, 0] == 217    # only M2 -> magenta
+    assert cmp[1, 1, 3] == 0      # neither -> transparent
+
+    # NDWI/MNDWI, probability, low-HAND
+    s2 = np.full((6, 8, 8), 1000.0, dtype=np.float32)
+    s2[1] = 3000.0  # high B3 (green) -> positive MNDWI/NDWI
+    mndwi_rgba = render_water_index_rgba(s2, index="mndwi")
+    assert mndwi_rgba.shape == (8, 8, 4) and mndwi_rgba[0, 0, 2] > mndwi_rgba[0, 0, 0]
+
+    proba = np.array([[0.9, 0.6], [0.1, 0.0]], dtype=np.float32)
+    assert render_probability_rgba(proba, valid).shape == (2, 2, 4)
+    terrain = np.ones((3, 4, 4), dtype=np.float32)
+    assert render_low_hand_rgba(terrain, threshold_m=2.0).shape == (4, 4, 4)
+
+    conf = compute_confidence_breakdown(m1, proba, valid, flooded_ha=10.0, high_conf_thr=0.8)
+    assert conf["high_conf_ha"] == 5.0 and conf["moderate_conf_ha"] == 5.0
+
+    badge = compute_scene_reliability_badge("B", cloud_pct=5.0, lag_days=1)
+    assert badge["level"] == "high"
 
     s1 = np.full((2, 8, 8), -12.0, dtype=np.float32)
     uri = rgba_to_data_url(render_s1_rgba(s1))

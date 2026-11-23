@@ -91,6 +91,100 @@ def compute_zonal_stats(
     return stats
 
 
+def compute_confidence_breakdown(
+    flood_mask: np.ndarray,
+    proba_map: np.ndarray,
+    valid_mask: np.ndarray,
+    flooded_ha: float,
+    high_conf_thr: float = 0.80,
+) -> dict[str, float]:
+    """Split flooded hectares into High Confidence (P >= 0.80) vs Moderate Confidence."""
+    in_flood = (flood_mask > 0) & valid_mask
+    n_flood = int(np.count_nonzero(in_flood))
+    n_valid = max(int(np.count_nonzero(valid_mask)), 1)
+
+    if n_flood == 0:
+        high_ratio = 0.0
+    else:
+        n_high = int(np.count_nonzero(in_flood & (proba_map >= high_conf_thr)))
+        high_ratio = n_high / n_flood
+
+    high_ha = flooded_ha * high_ratio
+    mod_ha = flooded_ha * (1.0 - high_ratio)
+    uncertain_px = int(np.count_nonzero(valid_mask & (proba_map >= 0.35) & (proba_map <= 0.65)))
+    return {
+        "high_conf_ha": round(high_ha, 2),
+        "moderate_conf_ha": round(mod_ha, 2),
+        "high_conf_pct": round(high_ratio * 100.0, 1),
+        "uncertain_area_pct": round(100.0 * uncertain_px / n_valid, 2),
+    }
+
+
+def extract_top_hotspots(
+    flood_gdf: gpd.GeoDataFrame,
+    top_n: int = 5,
+) -> list[dict[str, Any]]:
+    """Return top-N largest flood polygons with WGS84 centroid coordinates and Google Maps link."""
+    if len(flood_gdf) == 0:
+        return []
+    ordered = flood_gdf.sort_values("area_ha", ascending=False).head(top_n)
+    utm_crs = ordered.estimate_utm_crs()
+    centroids_wgs84 = ordered.to_crs(utm_crs).geometry.centroid.to_crs("EPSG:4326")
+
+    hotspots: list[dict[str, Any]] = []
+    for rank, ((_, row), pt) in enumerate(zip(ordered.iterrows(), centroids_wgs84, strict=True), start=1):
+        lat = round(float(pt.y), 5)
+        lon = round(float(pt.x), 5)
+        hotspots.append(
+            {
+                "foco": f"#{rank}",
+                "area_ha": round(float(row["area_ha"]), 2),
+                "lat": lat,
+                "lon": lon,
+                "google_maps": f"https://www.google.com/maps?q={lat},{lon}",
+            }
+        )
+    return hotspots
+
+
+def compute_scene_reliability_badge(
+    config_used: str,
+    cloud_pct: float | None = None,
+    lag_days: int | None = None,
+    uncertain_area_pct: float = 0.0,
+) -> dict[str, str]:
+    """Classify operational confidence level for decision-makers."""
+    if config_used == "B" and (cloud_pct is None or cloud_pct <= 15.0) and (lag_days is None or lag_days <= 2):
+        return {
+            "level": "high",
+            "title": "🟢 Alta confiabilidad operativa (Config B: S1 + S2 despejado)",
+            "detail": "Fusión SAR + óptica con baja nubosidad y desfase mínimo. Máxima precisión esperada.",
+        }
+    if uncertain_area_pct > 12.0:
+        return {
+            "level": "warning",
+            "title": "⚠️ Precaución: zona con incertidumbre moderada/alta",
+            "detail": (
+                f"El {uncertain_area_pct:.1f}% del área presenta probabilidades intermedias (0.35–0.65). "
+                "Revisa las capas de Probabilidad y NDWI/MNDWI antes de tomar decisiones."
+            ),
+        }
+    if config_used == "A":
+        return {
+            "level": "medium",
+            "title": "🟡 Modo operativo todo-clima (Config A: SAR + Terreno)",
+            "detail": (
+                "Funciona bajo nubes y tormentas. En zonas áridas planas puede haber falsos positivos en suelo seco; "
+                "validar con HAND y, cuando despeje, con Config B."
+            ),
+        }
+    return {
+        "level": "medium",
+        "title": "🟡 Modo referencia (Solo SAR — ablación)",
+        "detail": "Sin variables de terreno ni Sentinel-2; úsalo solo como referencia comparativa.",
+    }
+
+
 def summarize_analysis(
     post: PostprocResult,
     valid_mask: np.ndarray,
@@ -98,8 +192,9 @@ def summarize_analysis(
     crs: Any,
     terrain: np.ndarray | None = None,
     polygon_geojson: dict[str, Any] | None = None,
+    proba_map: np.ndarray | None = None,
 ) -> dict[str, Any]:
-    """Produce structured metric area + zonal statistics summary for UI and AI tools."""
+    """Produce structured metric area + zonal statistics + hotspots summary for UI and AI tools."""
     aoi_ha = compute_aoi_area_ha(bounds, crs=crs, polygon_geojson=polygon_geojson)
     flooded_ha = float(post.flood_gdf["area_ha"].sum()) if len(post.flood_gdf) > 0 else 0.0
     perm_water_ha = (
@@ -109,6 +204,12 @@ def summarize_analysis(
     valid_px = int(np.count_nonzero(valid_mask))
     flood_px = int(np.count_nonzero(post.flood_mask > 0))
     flooded_pct = (100.0 * flood_px / valid_px) if valid_px > 0 else 0.0
+
+    conf = (
+        compute_confidence_breakdown(post.flood_mask, proba_map, valid_mask, flooded_ha)
+        if proba_map is not None
+        else {"high_conf_ha": 0.0, "moderate_conf_ha": 0.0, "high_conf_pct": 0.0, "uncertain_area_pct": 0.0}
+    )
 
     return {
         "aoi_ha": round(aoi_ha, 2),
@@ -121,6 +222,8 @@ def summarize_analysis(
         else 0.0,
         "flooded_pct_of_valid": round(flooded_pct, 2),
         "valid_pixel_pct": round(100.0 * valid_px / max(valid_mask.size, 1), 2),
+        "confidence": conf,
+        "hotspots": extract_top_hotspots(post.flood_gdf, top_n=5),
         "zonal_stats": compute_zonal_stats(post.flood_mask, terrain),
     }
 

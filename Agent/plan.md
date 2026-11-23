@@ -70,7 +70,8 @@
   - [x] Modo **offline** (selector de evento/split Sen1Floods11, selector de modelo, capas conmutables, metadatos obligatorios siempre visibles, Flood IoU en vivo)
   - [x] Subida de GeoTIFF propio
   - [x] Descarga de GeoTIFF, GeoJSON y GeoPackage (`.gpkg`)
-  - [x] Modo **GEE en vivo** con dibujo de polígono (límite 20 km) y bloqueo explicativo de Config B si no hay S2 útil (nubes > 30% o desfase > 3 días)
+  - [x] Modo **GEE en vivo** con dibujo de polígono (límite 20 km con validación instantánea y escala métrica), clip exacto, Cloud Score+ y guardado offline en `data/stacks/`
+  - [x] Mejoras operativas para desastres: paleta azul Copernicus EMS, capas `NDWI`/`MNDWI`/`Probabilidad`/`HAND < 2 m`/`Slope`, **Comparación de 2 modelos**, **Semáforo de Confiabilidad**, **Top 5 Focos Críticos** y guía de usuario (`DOCUMENTACION.md`)
 
 > **🚦 Punto de Decisión — Día 10: ADELANTADO Y CUMPLIDO**
 > Pipeline end-to-end y app Streamlit (offline + upload + GEE en vivo) listos y testeados.
