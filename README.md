@@ -97,3 +97,15 @@ docker run -p 8501:8501 -e APP_MODE=local flood-mapper
 ```
 
 > Los pesos entrenados (`*.joblib`, `*.onnx`), el dataset `Sen1Floods11` y los secretos (`.env`, claves GEE) están excluidos de git vía `.gitignore`.
+
+---
+
+## Dataset y Atribución
+
+Los modelos fueron entrenados y evaluados exclusivamente sobre los 446 chips etiquetados manualmente (`HandLabeled`) de **Sen1Floods11**:
+
+- **Autores / Paper:** Derrick Bonafilia, Beth Tellman, Tyler Anderson y Erica Issenberg (2020). *"Sen1Floods11: A Georeferenced Dataset to Train and Test Deep Learning Flood Algorithms for Sentinel-1"*, **IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshops (CVPRW 2020)**, pp. 835–845.
+  - Paper oficial: <https://openaccess.thecvf.com/content_CVPRW_2020/html/w11/Bonafilia_Sen1Floods11_A_Georeferenced_Dataset_to_Train_and_Test_Deep_Learning_CVPRW_2020_paper.html>
+- **Repositorio oficial e instrucciones de descarga:** <https://github.com/cloudtostreet/Sen1Floods11>
+- **Descarga directa (Google Cloud Storage público):** `gs://sen1floods11` (vía `gsutil -m rsync -r gs://sen1floods11/v1.1/ ./dataset/`)
+- **Capas auxiliares de terreno y agua permanente:** Copernicus DEM GLO-30 (`COPERNICUS/DEM/GLO30_2024_1`, ESA) y MERIT Hydro v1.0.1 (`MERIT/Hydro/v1_0_1`, Yamazaki et al., 2019), consultadas vía Google Earth Engine.
