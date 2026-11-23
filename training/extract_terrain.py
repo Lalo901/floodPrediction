@@ -27,9 +27,8 @@ import ee
 import numpy as np
 import rasterio
 from dotenv import load_dotenv
-from tqdm import tqdm
-
 from scipy.ndimage import uniform_filter
+from tqdm import tqdm
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 S1_DIR = PROJECT_ROOT / "dataset" / "data" / "flood_events" / "HandLabeled" / "S1Hand"
@@ -105,9 +104,8 @@ def fetch_chip_terrain(
     for attempt in range(1, max_retries + 1):
         try:
             raw_bytes = ee.data.computePixels(request)
-            with rasterio.MemoryFile(raw_bytes) as mem:
-                with mem.open() as mem_src:
-                    raw = mem_src.read().astype(np.float32)
+            with rasterio.MemoryFile(raw_bytes) as mem, mem.open() as mem_src:
+                raw = mem_src.read().astype(np.float32)
 
             # raw bands: (slope, hand, dem, merit_wat) -> convert dem to dem_rel
             arr = raw.copy()
@@ -141,7 +139,9 @@ def main() -> None:
     args = parser.parse_args()
 
     load_dotenv(PROJECT_ROOT / ".env")
-    project_id = args.project or os.getenv("GEE_PROJECT_ID", "flood-mapper-mvp")
+    project_id = args.project or os.getenv("GEE_PROJECT_ID")
+    if not project_id:
+        raise RuntimeError("Define GEE_PROJECT_ID en .env o pasa --project TU_PROJECT_ID.")
     ee.Initialize(project=project_id)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)

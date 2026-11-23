@@ -6,10 +6,16 @@ import pytest
 import rasterio
 
 from core.analytics import check_config_b_eligibility, compute_s1_s2_lag_days, summarize_analysis
-from core.data import load_offline_scene
+from core.data import HAND_DIR, load_offline_scene
+from core.db import PROJECT_ROOT
 from core.metrics import compute_binary_metrics
 from core.postproc import export_raster_geotiff, export_vector, run_postprocessing
 from core.registry import load_model
+
+HAS_LOCAL_E2E_ASSETS = (
+    (HAND_DIR / "S1Hand" / "Bolivia_103757_S1Hand.tif").exists()
+    and (PROJECT_ROOT / "models" / "lightgbm_B.joblib").exists()
+)
 
 
 def test_config_b_eligibility_rules():
@@ -25,11 +31,17 @@ def test_config_b_eligibility_rules():
     assert compute_s1_s2_lag_days("2018-02-15", "2018-02-18") == 3
 
 
+@pytest.mark.skipif(
+    not HAS_LOCAL_E2E_ASSETS,
+    reason="Requires local Sen1Floods11 dataset and trained models/lightgbm_B.joblib",
+)
 def test_end_to_end_bolivia_chip_pipeline(tmp_path: Path):
     scene = load_offline_scene("Bolivia_103757")
     assert scene.s1.shape == (2, 512, 512)
     assert scene.terrain is not None and scene.terrain.shape == (4, 512, 512)
     assert scene.s2 is not None and scene.label is not None
+    assert scene.cloud_pct is None
+    assert scene.event_id is not None
 
     model = load_model("lightgbm_B")
     proba, mask, valid_mask = model.predict(scene.s1, terrain=scene.terrain, s2=scene.s2)

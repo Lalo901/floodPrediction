@@ -14,7 +14,7 @@ from typing import Any
 import joblib
 import numpy as np
 
-from core.features import ConfigName, FEATURE_NAMES_BY_CONFIG, build_feature_stack
+from core.features import ConfigName, build_feature_stack
 
 
 @dataclass
@@ -31,6 +31,7 @@ class ModelMetadata:
     norm_mean: tuple[float, ...] | None = None
     norm_std: tuple[float, ...] | None = None
     tile_size: int = 256
+    tile_overlap: int = 32
     data_version: str = "sen1floods11_handlabeled"
 
     def to_dict(self) -> dict[str, Any]:
@@ -41,6 +42,29 @@ class ModelMetadata:
         if self.norm_std is not None:
             d["norm_std"] = list(self.norm_std)
         return d
+
+
+def _tile_starts(length: int, tile: int, stride: int) -> list[int]:
+    """Compute tile start offsets covering `[0, length)` cleanly with overlap."""
+    if length <= tile:
+        return [0]
+    starts = list(range(0, length - tile + 1, stride))
+    if starts[-1] != length - tile:
+        starts.append(length - tile)
+    return starts
+
+
+def _blend_weight_2d(tile: int, overlap: int) -> np.ndarray:
+    """Raised-cosine feathering weights to eliminate tile seam artifacts."""
+    if overlap <= 0:
+        return np.ones((tile, tile), dtype=np.float32)
+    ramp = np.ones(tile, dtype=np.float32)
+    edge = min(overlap, tile // 2)
+    t = np.linspace(0.0, np.pi, edge + 2, dtype=np.float32)[1:-1]
+    fade = 0.5 * (1.0 - np.cos(t))
+    ramp[:edge] = fade
+    ramp[-edge:] = fade[::-1]
+    return np.outer(ramp, ramp).astype(np.float32)
 
 
 class FloodModel:
@@ -70,7 +94,7 @@ class FloodModel:
         return path
 
     @classmethod
-    def load(cls, path: Path | str) -> "FloodModel":
+    def load(cls, path: Path | str) -> FloodModel:
         """Load either a `.joblib` tabular FloodModel or an `.onnx` model with companion JSON."""
         path = Path(path)
         if path.suffix == ".onnx":
@@ -91,6 +115,7 @@ class FloodModel:
                 norm_mean=tuple(raw_meta["norm_mean"]) if raw_meta.get("norm_mean") else None,
                 norm_std=tuple(raw_meta["norm_std"]) if raw_meta.get("norm_std") else None,
                 tile_size=int(raw_meta.get("tile_size", 256)),
+                tile_overlap=int(raw_meta.get("tile_overlap", 32)),
                 data_version=raw_meta.get("data_version", "sen1floods11_handlabeled"),
             )
             return cls(metadata=meta, onnx_path=path)
@@ -108,6 +133,7 @@ class FloodModel:
             norm_mean=tuple(raw_meta["norm_mean"]) if raw_meta.get("norm_mean") else None,
             norm_std=tuple(raw_meta["norm_std"]) if raw_meta.get("norm_std") else None,
             tile_size=int(raw_meta.get("tile_size", 256)),
+            tile_overlap=int(raw_meta.get("tile_overlap", 32)),
             data_version=raw_meta.get("data_version", "sen1floods11_handlabeled"),
         )
         return cls(metadata=meta, estimator=payload["estimator"])
@@ -158,9 +184,12 @@ class FloodModel:
         return proba_flat.reshape(h, w)
 
     def _predict_onnx_tiled(self, stack: np.ndarray, valid_mask: np.ndarray) -> np.ndarray:
+        """Sliding-window ONNX inference with overlap blending to prevent tile seams."""
         session = self._get_ort_session()
         input_name = session.get_inputs()[0].name
         tile = self.metadata.tile_size
+        overlap = max(0, min(self.metadata.tile_overlap, tile // 2))
+        stride = max(1, tile - overlap)
 
         x = stack.astype(np.float32, copy=True)
         if self.metadata.norm_mean is not None and self.metadata.norm_std is not None:
@@ -169,29 +198,35 @@ class FloodModel:
             x = (x - mean) / np.maximum(std, 1e-6)
 
         _, h, w = x.shape
-        pad_h = (tile - (h % tile)) % tile
-        pad_w = (tile - (w % tile)) % tile
+        pad_h = max(0, tile - h)
+        pad_w = max(0, tile - w)
         if pad_h > 0 or pad_w > 0:
             x = np.pad(x, ((0, 0), (0, pad_h), (0, pad_w)), mode="reflect")
 
         _, hp, wp = x.shape
-        out = np.zeros((hp, wp), dtype=np.float32)
-        for y0 in range(0, hp, tile):
-            for x0 in range(0, wp, tile):
+        acc = np.zeros((hp, wp), dtype=np.float32)
+        wsum = np.zeros((hp, wp), dtype=np.float32)
+        blend = _blend_weight_2d(tile, overlap)
+
+        y_starts = _tile_starts(hp, tile, stride)
+        x_starts = _tile_starts(wp, tile, stride)
+
+        for y0 in y_starts:
+            for x0 in x_starts:
                 patch = x[:, y0 : y0 + tile, x0 : x0 + tile][None, ...]
                 logits = session.run(None, {input_name: patch})[0]
-                # Support either (1, 1, H, W) sigmoid logits or (1, 2, H, W) softmax logits
                 if logits.shape[1] == 1:
                     prob = 1.0 / (1.0 + np.exp(-np.clip(logits[0, 0], -30.0, 30.0)))
                 else:
                     shifted = logits[0] - np.max(logits[0], axis=0, keepdims=True)
                     exp_l = np.exp(shifted)
                     prob = exp_l[1] / np.sum(exp_l, axis=0)
-                out[y0 : y0 + tile, x0 : x0 + tile] = prob
+                acc[y0 : y0 + tile, x0 : x0 + tile] += prob * blend
+                wsum[y0 : y0 + tile, x0 : x0 + tile] += blend
 
-        proba = out[:h, :w]
+        proba = acc[:h, :w] / np.maximum(wsum[:h, :w], 1e-6)
         proba[~valid_mask] = 0.0
-        return proba
+        return proba.astype(np.float32)
 
     def predict(
         self,

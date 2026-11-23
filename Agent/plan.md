@@ -1,6 +1,6 @@
 # Flood Mapper MVP — Plan de Ejecución por Fases
 
-> Tablero vivo de tareas. Referencia técnica en [spec.md](file:///home/farfaneduardo/Documentos/floodPrediction/Agent/spec.md).
+> Tablero vivo de tareas. Referencia técnica en [spec.md](spec.md).
 > Plazo: **15 días hábiles** (3 semanas). Aplicar la línea de corte sin dudar en los puntos de decisión.
 
 ---
@@ -51,8 +51,8 @@
 - [x] Entrenar y registrar **LightGBM** (ablación `S1_only` IoU 0.6217, `Config A` IoU 0.6318, `Config B` IoU 0.8869)
 - [x] Entrenar y registrar **Random Forest liviano (< 50 MB)** (`Config A` 8.88 MB / IoU 0.6366, `Config B` 7.24 MB / IoU 0.8926)
 - [ ] *(Opcional / corte #1)* Entrenar **XGBoost** (Config A y Config B)
-- [x] En paralelo en **Google Colab (GPU)**: entrenar **DeepLabV3+ (`resnet34`)** Config A (`Test IoU 0.6889`, `Bolivia IoU 0.6949`, `deeplabv3plus_A.onnx` autocontenido `89.8 MB`) *(pendiente copiar a `models/` y registrar con `training/register_onnx.py`)*
-- [ ] *(Opcional / corte #2)* Entrenar **DeepLabV3+** Config B en Colab y exportar a ONNX *(en curso en Colab)*
+- [x] En paralelo en **Google Colab (GPU)**: entrenar **DeepLabV3+ (`resnet34`)** Config A (`Test IoU 0.6889`, `Bolivia IoU 0.6949`, `deeplabv3plus_A.onnx` `89.8 MB`) *(pendiente copiar a `models/` y registrar con `training/register_onnx.py`)*
+- [x] *(Opcional / corte #2)* Entrenar **DeepLabV3+** Config B en Colab (`Test IoU 0.8311`, `Bolivia IoU 0.7937`, `deeplabv3plus_B.onnx` `90.0 MB`) *(pendiente copiar a `models/` y registrar con `training/register_onnx.py`)*
 
 **Entregable:** Al menos 5–6 modelos entrenados, livianos (< 50 MB / ONNX) y registrados en `data/flood.db`.
 

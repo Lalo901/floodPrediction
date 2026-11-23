@@ -8,21 +8,26 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 import os
+import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import geopandas as gpd
 import numpy as np
 import rasterio
+from rasterio.features import rasterize
 from rasterio.transform import from_bounds
 from rasterio.warp import transform_bounds
 from scipy.ndimage import uniform_filter
 from shapely.geometry import shape
 
 from core.db import DEFAULT_DB_PATH, PROJECT_ROOT, list_events
+
+logger = logging.getLogger(__name__)
 
 HAND_DIR = PROJECT_ROOT / "dataset" / "data" / "flood_events" / "HandLabeled"
 TERRAIN_DIR = PROJECT_ROOT / "dataset" / "derived" / "TerrainHand"
@@ -34,6 +39,7 @@ EVENT_PREFIX_TO_DB_NAME = {
 }
 
 S2_SIX_BANDS = ["B2", "B3", "B4", "B8", "B11", "B12"]
+CLOUD_SCORE_THRESHOLD = 0.60
 
 
 @dataclass
@@ -46,6 +52,8 @@ class SceneBundle:
     s1: np.ndarray  # (2, H, W) float32 VV, VH in dB
     profile: dict[str, Any]
     bounds_wgs84: tuple[float, float, float, float]  # (west, south, east, north)
+    event_id: int | None = None
+    polygon_geojson: dict[str, Any] | None = None
     s2: np.ndarray | None = None  # (13, H, W) or (6, H, W)
     terrain: np.ndarray | None = None  # (4, H, W) slope, hand, dem_rel, merit_wat
     perm_water: np.ndarray | None = None  # (H, W) uint8
@@ -56,9 +64,17 @@ class SceneBundle:
     cloud_pct: float | None = None
 
 
+def sanitize_scene_id(raw: str) -> str:
+    """Sanitize untrusted filenames into safe identifier tokens for output paths."""
+    cleaned = re.sub(r"[^A-Za-z0-9_-]+", "_", Path(raw).stem).strip("_")
+    return cleaned[:80] or "scene"
+
+
 def _bounds_to_wgs84(bounds: Any, crs: Any) -> tuple[float, float, float, float]:
     if crs is not None and str(crs).upper() != "EPSG:4326":
-        w, s, e, n = transform_bounds(crs, "EPSG:4326", bounds.left, bounds.bottom, bounds.right, bounds.top)
+        w, s, e, n = transform_bounds(
+            crs, "EPSG:4326", bounds.left, bounds.bottom, bounds.right, bounds.top
+        )
         return (float(w), float(s), float(e), float(n))
     return (float(bounds.left), float(bounds.bottom), float(bounds.right), float(bounds.top))
 
@@ -139,14 +155,23 @@ def load_offline_scene(stem: str, db_path: Path | str = DEFAULT_DB_PATH) -> Scen
         with rasterio.open(label_path) as src:
             label = src.read(1).astype(np.int16)
 
-    perm_water = None
+    # Combine JRC permanent water with MERIT Hydro permanent channels when both exist
+    jrc_mask = None
     jrc_path = _find_offline_file("JRCWaterHand", f"{stem}_JRCWaterHand.tif")
     if jrc_path is not None:
         with rasterio.open(jrc_path) as src:
-            jrc = src.read(1)
-        perm_water = (jrc == 1).astype(np.uint8)
-    elif terrain is not None and terrain.shape[0] >= 4:
-        perm_water = (terrain[3] > 0.5).astype(np.uint8)
+            jrc_mask = src.read(1) == 1
+
+    merit_mask = (terrain[3] > 0.5) if (terrain is not None and terrain.shape[0] >= 4) else None
+
+    if jrc_mask is not None and merit_mask is not None:
+        perm_water = (jrc_mask | merit_mask).astype(np.uint8)
+    elif jrc_mask is not None:
+        perm_water = jrc_mask.astype(np.uint8)
+    elif merit_mask is not None:
+        perm_water = merit_mask.astype(np.uint8)
+    else:
+        perm_water = None
 
     event_prefix = stem.split("_")[0]
     db_event_name = EVENT_PREFIX_TO_DB_NAME.get(event_prefix, event_prefix)
@@ -156,6 +181,7 @@ def load_offline_scene(stem: str, db_path: Path | str = DEFAULT_DB_PATH) -> Scen
         scene_id=stem,
         source="offline",
         event_name=event_prefix,
+        event_id=int(ev_meta["id"]) if ev_meta else None,
         s1=s1,
         s2=s2,
         terrain=terrain,
@@ -166,7 +192,7 @@ def load_offline_scene(stem: str, db_path: Path | str = DEFAULT_DB_PATH) -> Scen
         s1_date=ev_meta["s1_date"] if ev_meta else None,
         s2_date=ev_meta["s2_date"] if ev_meta else None,
         orbit=ev_meta["orbit"] if ev_meta else None,
-        cloud_pct=0.0 if s2 is not None else None,
+        cloud_pct=None,  # Sen1Floods11 S2Hand does not store per-chip cloud %
     )
 
 
@@ -181,11 +207,10 @@ def load_uploaded_geotiff(
     fetch_terrain_from_gee: bool = False,
 ) -> SceneBundle:
     """Load a user-uploaded 2-band Sentinel-1 GeoTIFF (VV, VH in dB) into a SceneBundle."""
-    with rasterio.MemoryFile(s1_bytes) as mem:
-        with mem.open() as src:
-            s1 = src.read().astype(np.float32)
-            profile = src.profile.copy()
-            bounds_wgs84 = _bounds_to_wgs84(src.bounds, src.crs)
+    with rasterio.MemoryFile(s1_bytes) as mem, mem.open() as src:
+        s1 = src.read().astype(np.float32)
+        profile = src.profile.copy()
+        bounds_wgs84 = _bounds_to_wgs84(src.bounds, src.crs)
 
     if s1.shape[0] < 2:
         raise ValueError("El GeoTIFF de Sentinel-1 debe tener al menos 2 bandas (VV y VH en dB).")
@@ -193,9 +218,8 @@ def load_uploaded_geotiff(
 
     s2 = None
     if s2_bytes is not None:
-        with rasterio.MemoryFile(s2_bytes) as mem:
-            with mem.open() as src:
-                s2 = src.read()
+        with rasterio.MemoryFile(s2_bytes) as mem, mem.open() as src:
+            s2 = src.read()
 
     terrain = None
     perm_water = None
@@ -204,7 +228,7 @@ def load_uploaded_geotiff(
         perm_water = (terrain[3] > 0.5).astype(np.uint8)
 
     return SceneBundle(
-        scene_id=Path(filename).stem,
+        scene_id=sanitize_scene_id(filename),
         source="upload",
         event_name="Custom GeoTIFF",
         s1=s1,
@@ -218,7 +242,7 @@ def load_uploaded_geotiff(
 
 
 # ---------------------------------------------------------------------------
-# 3. Live Google Earth Engine (S1, S2 L1C, GLO-30 Slope/DEM_rel, MERIT HAND)
+# 3. Live Google Earth Engine (S1, S2 L1C + Cloud Score+, GLO-30, MERIT HAND)
 # ---------------------------------------------------------------------------
 
 _EE_INITIALIZED = False
@@ -234,24 +258,28 @@ def init_gee() -> bool:
         from dotenv import load_dotenv
 
         load_dotenv(PROJECT_ROOT / ".env")
-        project_id = os.getenv("GEE_PROJECT_ID", "flood-mapper-mvp")
+        project_id = os.getenv("GEE_PROJECT_ID")
         sa_json_str = os.getenv("GEE_SERVICE_ACCOUNT_JSON")
         sa_key_path = os.getenv("GEE_SERVICE_ACCOUNT_KEY")
 
         if sa_json_str:
             info = json.loads(sa_json_str)
             creds = ee.ServiceAccountCredentials(info["client_email"], key_data=sa_json_str)
-            ee.Initialize(credentials=creds, project=project_id)
+            ee.Initialize(credentials=creds, project=project_id or info.get("project_id"))
         elif sa_key_path and Path(sa_key_path).exists():
             info = json.loads(Path(sa_key_path).read_text(encoding="utf-8"))
             creds = ee.ServiceAccountCredentials(info["client_email"], key_file=sa_key_path)
-            ee.Initialize(credentials=creds, project=project_id)
+            ee.Initialize(credentials=creds, project=project_id or info.get("project_id"))
         else:
+            if not project_id:
+                logger.warning("GEE_PROJECT_ID no configurado; modo GEE en vivo deshabilitado.")
+                return False
             ee.Initialize(project=project_id)
 
         _EE_INITIALIZED = True
         return True
-    except Exception:
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("No se pudo inicializar Google Earth Engine: %s", exc)
         return False
 
 
@@ -259,19 +287,28 @@ def gee_is_configured() -> bool:
     return init_gee()
 
 
-def _compute_dem_rel(dem: np.ndarray, window_px: int = 51) -> np.ndarray:
+def _compute_dem_rel(
+    dem: np.ndarray,
+    pixel_res_m: float = 10.0,
+    window_meters: float = 510.0,
+) -> np.ndarray:
+    """Compute local relative elevation over a fixed metric radius (~510 m = 51 px at 10 m)."""
     finite = np.isfinite(dem)
     if not np.any(finite):
         return np.zeros_like(dem, dtype=np.float32)
     fill = float(np.median(dem[finite]))
     dem_clean = np.where(finite, dem, fill).astype(np.float32)
-    return (dem_clean - uniform_filter(dem_clean, size=window_px, mode="reflect")).astype(np.float32)
+    win_px = max(3, round(window_meters / max(pixel_res_m, 1.0)) | 1)
+    return (dem_clean - uniform_filter(dem_clean, size=win_px, mode="reflect")).astype(np.float32)
 
 
 def _ee_compute_pixels(ee_img: Any, profile: dict[str, Any]) -> np.ndarray:
     import ee
 
     t = profile["transform"]
+    crs_code = (
+        profile["crs"].to_string() if hasattr(profile["crs"], "to_string") else str(profile["crs"])
+    )
     request = {
         "expression": ee_img,
         "fileFormat": "GEO_TIFF",
@@ -285,16 +322,18 @@ def _ee_compute_pixels(ee_img: Any, profile: dict[str, Any]) -> np.ndarray:
                 "scaleY": float(t.e),
                 "translateY": float(t.f),
             },
-            "crsCode": profile["crs"].to_string() if hasattr(profile["crs"], "to_string") else str(profile["crs"]),
+            "crsCode": crs_code,
         },
     }
     raw_bytes = ee.data.computePixels(request)
-    with rasterio.MemoryFile(raw_bytes) as mem:
-        with mem.open() as src:
-            return src.read().astype(np.float32)
+    with rasterio.MemoryFile(raw_bytes) as mem, mem.open() as src:
+        return src.read().astype(np.float32)
 
 
-def fetch_gee_terrain_for_profile(profile: dict[str, Any]) -> np.ndarray:
+def fetch_gee_terrain_for_profile(
+    profile: dict[str, Any],
+    pixel_res_m: float = 10.0,
+) -> np.ndarray:
     """Download `(slope, hand, dem_rel, merit_wat)` aligned to an arbitrary raster profile."""
     import ee
 
@@ -309,7 +348,7 @@ def fetch_gee_terrain_for_profile(profile: dict[str, Any]) -> np.ndarray:
     terrain_img = ee.Image.cat([slope, hand, dem, merit_wat]).toFloat()
     raw = _ee_compute_pixels(terrain_img, profile)
     arr = raw.copy()
-    arr[2] = _compute_dem_rel(raw[2])
+    arr[2] = _compute_dem_rel(raw[2], pixel_res_m=pixel_res_m)
     return arr
 
 
@@ -342,19 +381,17 @@ def list_gee_s1_scenes(
     for feat in info.get("features", []):
         props = feat.get("properties", {})
         ts_ms = props.get("system:time_start")
-        date_str = datetime.utcfromtimestamp(ts_ms / 1000.0).strftime("%Y-%m-%d") if ts_ms else ""
+        date_str = (
+            datetime.fromtimestamp(ts_ms / 1000.0, tz=UTC).strftime("%Y-%m-%d")
+            if ts_ms
+            else ""
+        )
         orbit = props.get("orbitProperties_pass", "")
         key = (date_str, orbit)
         if key in seen:
             continue
         seen.add(key)
-        scenes.append(
-            {
-                "date": date_str,
-                "orbit": orbit,
-                "scene_id": feat.get("id", ""),
-            }
-        )
+        scenes.append({"date": date_str, "orbit": orbit, "scene_id": feat.get("id", "")})
     return scenes
 
 
@@ -366,7 +403,7 @@ def fetch_gee_scene(
     target_res_m: float = 10.0,
     max_dim_px: int = 1024,
 ) -> SceneBundle:
-    """Fetch aligned S1 + Terrain + nearest S2 L1C (within ±3d) from GEE for a polygon."""
+    """Fetch polygon-clipped S1 + Terrain + Cloud-Score+ masked S2 L1C (±3d) from GEE."""
     import ee
 
     if not init_gee():
@@ -380,12 +417,15 @@ def fetch_gee_scene(
     height_km = (bounds_m[3] - bounds_m[1]) / 1000.0
     if width_km > max_side_km or height_km > max_side_km:
         raise ValueError(
-            f"El polígono mide {width_km:.1f}×{height_km:.1f} km (máximo permitido: {max_side_km:.0f} km por lado)."
+            f"El polígono mide {width_km:.1f}×{height_km:.1f} km "
+            f"(máximo permitido: {max_side_km:.0f} km por lado)."
         )
 
     west, south, east, north = poly.bounds
     width_px = int(np.clip(round((width_km * 1000.0) / target_res_m), 64, max_dim_px))
     height_px = int(np.clip(round((height_km * 1000.0) / target_res_m), 64, max_dim_px))
+    eff_res_m = max((width_km * 1000.0) / width_px, (height_km * 1000.0) / height_px)
+
     transform = from_bounds(west, south, east, north, width_px, height_px)
     profile = {
         "driver": "GTiff",
@@ -396,6 +436,15 @@ def fetch_gee_scene(
         "crs": rasterio.crs.CRS.from_epsg(4326),
         "transform": transform,
     }
+
+    # Exact polygon interior mask so pixels outside the drawn shape are excluded from inference & area
+    inside_poly = rasterize(
+        [(poly, 1)],
+        out_shape=(height_px, width_px),
+        transform=transform,
+        fill=0,
+        dtype="uint8",
+    ).astype(bool)
 
     ee_geom = ee.Geometry(polygon_geojson)
     dt = datetime.strptime(s1_date[:10], "%Y-%m-%d")
@@ -412,11 +461,12 @@ def fetch_gee_scene(
 
     s1_img = s1_col.select(["VV", "VH"]).mosaic().toFloat()
     s1 = _ee_compute_pixels(s1_img, profile)
+    s1[:, ~inside_poly] = np.nan
 
-    terrain = fetch_gee_terrain_for_profile(profile)
-    perm_water = (terrain[3] > 0.5).astype(np.uint8)
+    terrain = fetch_gee_terrain_for_profile(profile, pixel_res_m=eff_res_m)
+    perm_water = ((terrain[3] > 0.5) & inside_poly).astype(np.uint8)
 
-    # Search nearest S2 L1C within ±3 days
+    # Search nearest S2 L1C within ±3 days and mask clouds inside the polygon via Cloud Score+
     s2_start = (dt - timedelta(days=3)).strftime("%Y-%m-%d")
     s2_end = (dt + timedelta(days=4)).strftime("%Y-%m-%d")
     s2_col = (
@@ -433,15 +483,33 @@ def fetch_gee_scene(
         feat = s2_info["features"][0]
         props = feat.get("properties", {})
         ts_ms = props.get("system:time_start")
-        s2_date = datetime.utcfromtimestamp(ts_ms / 1000.0).strftime("%Y-%m-%d") if ts_ms else None
-        cloud_pct = float(props.get("CLOUDY_PIXEL_PERCENTAGE", 100.0))
-        s2_img = ee.Image(feat["id"]).select(S2_SIX_BANDS).toFloat()
-        s2 = _ee_compute_pixels(s2_img, profile)
+        s2_date = (
+            datetime.fromtimestamp(ts_ms / 1000.0, tz=UTC).strftime("%Y-%m-%d")
+            if ts_ms
+            else None
+        )
+        s2_img = ee.Image(feat["id"])
+        cs_col = (
+            ee.ImageCollection("GOOGLE/CLOUD_SCORE_PLUS/V1/S2_HARMONIZED")
+            .filterBounds(ee_geom)
+            .filterDate(s2_date, (datetime.strptime(s2_date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d"))
+        )
+        cs_img = cs_col.select("cs_cdf").mosaic().unmask(1.0).rename("cs_cdf")
+        s2_and_cs = ee.Image.cat([s2_img.select(S2_SIX_BANDS), cs_img]).toFloat()
+        s2_raw = _ee_compute_pixels(s2_and_cs, profile)
+        s2 = s2_raw[:6]
+        cs_cdf = s2_raw[6]
+
+        cloudy = cs_cdf < CLOUD_SCORE_THRESHOLD
+        poly_px = max(int(inside_poly.sum()), 1)
+        cloud_pct = round(100.0 * float((cloudy & inside_poly).sum()) / poly_px, 1)
+        s2[:, cloudy | (~inside_poly)] = np.nan
 
     return SceneBundle(
         scene_id=f"gee_{s1_date[:10]}",
         source="gee",
         event_name="Polígono GEE en vivo",
+        polygon_geojson=polygon_geojson,
         s1=s1,
         s2=s2,
         terrain=terrain,

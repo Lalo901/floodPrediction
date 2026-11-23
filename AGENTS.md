@@ -5,9 +5,10 @@ Sistema de detección de agua/inundaciones sobre imágenes Sentinel-1 y Sentinel
 ## Fuente de verdad (SDD liviano)
 
 Antes de implementar o modificar arquitectura, leer:
-- **Especificación y contratos:** [Agent/spec.md](file:///home/farfaneduardo/Documentos/floodPrediction/Agent/spec.md)
-- **Plan por fases y estado actual:** [Agent/plan.md](file:///home/farfaneduardo/Documentos/floodPrediction/Agent/plan.md)
-- **Bitácora de decisiones y métricas:** [Agent/decisions.md](file:///home/farfaneduardo/Documentos/floodPrediction/Agent/decisions.md)
+- **Especificación y contratos:** [Agent/spec.md](Agent/spec.md)
+- **Plan por fases y estado actual:** [Agent/plan.md](Agent/plan.md)
+- **Bitácora de decisiones y métricas:** [Agent/decisions.md](Agent/decisions.md)
+- **Auditoría técnica y de seguridad:** [Agent/auditoria.md](Agent/auditoria.md)
 
 ## Reglas del repositorio
 

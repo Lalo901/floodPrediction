@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import os
 import sys
-import tempfile
 import time
 from datetime import date, timedelta
 from pathlib import Path
@@ -22,6 +20,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.layers import (
+    render_error_map_rgba,
     render_hand_rgba,
     render_mask_rgba,
     render_s1_rgba,
@@ -59,6 +58,7 @@ st.set_page_config(page_title="Flood Mapper MVP", page_icon="🌊", layout="wide
 
 APP_MODE = os.getenv("APP_MODE", "local")
 OUTPUTS_DIR = PROJECT_ROOT / "data" / "outputs"
+MAX_STORED_OUTPUT_FILES = 60  # ~20 analyses x 3 files to protect ephemeral Space disk
 
 
 @st.cache_resource
@@ -73,14 +73,24 @@ def _cached_load_model(model_name: str):
     return load_model(model_name, DEFAULT_DB_PATH)
 
 
+def _prune_old_outputs(max_files: int = MAX_STORED_OUTPUT_FILES) -> None:
+    if not OUTPUTS_DIR.exists():
+        return
+    files = sorted(OUTPUTS_DIR.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for old in files[max_files:]:
+        if old.is_file():
+            old.unlink(missing_ok=True)
+
+
 def _list_recent_analyses(limit: int = 20) -> list[dict[str, Any]]:
     with get_connection(DEFAULT_DB_PATH) as conn:
         rows = conn.execute(
             """
-            SELECT a.id, a.created_at, a.s1_date, a.s2_date, a.cloud_pct,
+            SELECT a.id, a.created_at, e.name AS event, a.s1_date, a.s2_date, a.cloud_pct,
                    m.name AS model_name, m.config, a.flooded_ha, a.perm_water_ha, a.live_iou
             FROM analyses a
             LEFT JOIN models m ON a.model_id = m.id
+            LEFT JOIN events e ON a.event_id = e.id
             ORDER BY a.id DESC
             LIMIT ?;
             """,
@@ -92,7 +102,9 @@ def _list_recent_analyses(limit: int = 20) -> list[dict[str, Any]]:
 def _build_result_map(
     scene: SceneBundle,
     flood_mask,
+    raw_water_mask,
     perm_water_mask,
+    valid_mask,
     show_gt: bool = True,
 ) -> folium.Map:
     west, south, east, north = scene.bounds_wgs84
@@ -140,7 +152,7 @@ def _build_result_map(
         folium.raster_layers.ImageOverlay(
             image=rgba_to_data_url(render_mask_rgba(perm_water_mask, rgb=(0, 191, 255), alpha=170)),
             bounds=img_bounds,
-            name="Agua Permanente (JRC/MERIT)",
+            name="Agua Permanente (JRC + MERIT)",
             opacity=0.8,
             show=True,
         ).add_to(m)
@@ -160,6 +172,13 @@ def _build_result_map(
             bounds=img_bounds,
             name="Ground Truth (LabelHand)",
             opacity=0.75,
+            show=False,
+        ).add_to(m)
+        folium.raster_layers.ImageOverlay(
+            image=rgba_to_data_url(render_error_map_rgba(scene.label, raw_water_mask, valid_mask)),
+            bounds=img_bounds,
+            name="Mapa de Errores (TP=Verde, FP=Rojo, FN=Amarillo)",
+            opacity=0.85,
             show=False,
         ).add_to(m)
 
@@ -198,11 +217,12 @@ def _run_analysis_pipeline(
         bounds=scene.bounds_wgs84,
         crs="EPSG:4326",
         terrain=scene.terrain,
+        polygon_geojson=scene.polygon_geojson,
     )
 
     live_metrics = None
     if scene.label is not None:
-        # Compare raw water detection (flood + perm) against LabelHand (which marks all surface water)
+        # LabelHand marks all surface water (flood + permanent); evaluate total detected water
         live_metrics = compute_binary_metrics(scene.label, post.raw_water_mask, valid_mask=valid_mask)
 
     lag_days = compute_s1_s2_lag_days(scene.s1_date, scene.s2_date)
@@ -212,13 +232,15 @@ def _run_analysis_pipeline(
     tif_path = export_raster_geotiff(post.flood_mask, proba, scene.profile, OUTPUTS_DIR / f"{stem_out}.tif")
     gpkg_path = export_vector(post.flood_gdf, OUTPUTS_DIR / f"{stem_out}.gpkg")
     geojson_path = export_vector(post.flood_gdf, OUTPUTS_DIR / f"{stem_out}.geojson")
+    _prune_old_outputs()
 
     west, south, east, north = scene.bounds_wgs84
-    poly_geojson = {
+    poly_geojson = scene.polygon_geojson or {
         "type": "Polygon",
         "coordinates": [[[west, south], [east, south], [east, north], [west, north], [west, south]]],
     }
     analysis_id = save_analysis_record(
+        event_id=scene.event_id,
         polygon_geojson=poly_geojson,
         model_id=int(model_row["id"]),
         flooded_ha=summary["flooded_ha"],
@@ -237,6 +259,7 @@ def _run_analysis_pipeline(
         "scene": scene,
         "model_row": model_row,
         "post": post,
+        "valid_mask": valid_mask,
         "proba": proba,
         "summary": summary,
         "live_metrics": live_metrics,
@@ -246,6 +269,12 @@ def _run_analysis_pipeline(
         "gpkg_path": gpkg_path,
         "geojson_path": geojson_path,
     }
+
+
+def _format_model_option(m: dict[str, Any]) -> str:
+    tag = "Solo ablación" if m["config"] == "S1_only" else f"Config {m['config']}"
+    iou_txt = f"{m['test_iou']:.3f}" if m.get("test_iou") is not None else "N/D"
+    return f"{m['name']}  |  {tag}  (Test IoU: {iou_txt})"
 
 
 def main() -> None:
@@ -302,7 +331,6 @@ def main() -> None:
         st.divider()
         st.header("2. Modelo")
 
-        # Determine Config B eligibility for the current scene
         config_b_ok = True
         config_b_reason = ""
         if selected_scene is not None:
@@ -328,20 +356,21 @@ def main() -> None:
             st.error("Ningún modelo registrado es compatible con las bandas de esta escena.")
             return
 
-        model_labels = {
-            f"{m['name']}  |  Config {m['config']}  (Test IoU: {m['test_iou']:.3f})": m
-            for m in eligible_models
-        }
+        model_labels = {_format_model_option(m): m for m in eligible_models}
         chosen_model_label = st.selectbox("Seleccionar modelo", list(model_labels.keys()))
         chosen_model = model_labels[chosen_model_label]
 
         st.divider()
         st.header("3. Postproceso")
-        remove_perm = st.checkbox("Restar agua permanente (JRC/MERIT)", value=True)
+        remove_perm = st.checkbox("Restar agua permanente (JRC + MERIT)", value=True)
         median_size = st.select_slider("Filtro mediana (px)", options=[1, 3, 5], value=3)
         min_area_ha = st.slider("Área mínima de polígono (ha)", 0.0, 2.0, 0.1, 0.05)
 
-        run_btn = st.button("🚀 Ejecutar Detección", type="primary", use_container_width=True)
+        run_btn = False
+        if source_mode != "Polígono en vivo (GEE)":
+            run_btn = st.button("🚀 Ejecutar Detección", type="primary", use_container_width=True)
+        else:
+            st.caption("Dibuja tu polígono y lanza la consulta en el panel principal →")
 
     # ---------------- Main Tabs ----------------
     tab_map, tab_models, tab_history = st.tabs(
@@ -349,7 +378,6 @@ def main() -> None:
     )
 
     with tab_map:
-        # Live GEE drawing panel
         if source_mode == "Polígono en vivo (GEE)":
             st.subheader("Dibuja un polígono (máx. 20 km por lado) y busca escenas Sentinel-1")
             c1, c2 = st.columns(2)
@@ -382,20 +410,22 @@ def main() -> None:
                     pick = st.selectbox("Escena Sentinel-1 encontrada", list(scene_opts.keys()))
                     if st.button("⬇️ Descargar recorte GEE y ejecutar modelo", type="primary"):
                         sc_meta = scene_opts[pick]
-                        with st.spinner("Descargando S1 + Slope/HAND + S2 desde GEE y ejecutando modelo..."):
+                        with st.spinner("Descargando S1 + Slope/HAND + S2 (Cloud Score+) desde GEE..."):
                             gee_bundle = fetch_gee_scene(
                                 st.session_state["gee_polygon"],
                                 s1_date=sc_meta["date"],
                                 orbit=sc_meta["orbit"],
                             )
-                            # Re-check Config B eligibility for live scene
                             lag = compute_s1_s2_lag_days(gee_bundle.s1_date, gee_bundle.s2_date)
                             b_ok, b_msg = check_config_b_eligibility(
                                 gee_bundle.s2 is not None, gee_bundle.cloud_pct, lag
                             )
                             model_to_run = chosen_model
                             if model_to_run["config"] == "B" and not b_ok:
-                                st.warning(f"Config B bloqueada en escena en vivo ({b_msg}). Usando fallback Config A.")
+                                st.warning(
+                                    f"Config B bloqueada en escena en vivo ({b_msg}). "
+                                    "Usando fallback automático Config A."
+                                )
                                 fallback = next((m for m in models if m["config"] == "A"), models[0])
                                 model_to_run = fallback
 
@@ -403,7 +433,6 @@ def main() -> None:
                                 gee_bundle, model_to_run, median_size, min_area_ha, remove_perm
                             )
 
-        # Trigger offline/upload run
         if run_btn and selected_scene is not None:
             with st.spinner(f"Ejecutando {chosen_model['name']} sobre {selected_scene.scene_id}..."):
                 st.session_state["last_result"] = _run_analysis_pipeline(
@@ -412,39 +441,49 @@ def main() -> None:
 
         res = st.session_state.get("last_result")
         if res is None:
-            st.info("Selecciona una escena y un modelo en el panel izquierdo y pulsa **Ejecutar Detección**.")
+            st.info("Selecciona una escena y un modelo en el panel izquierdo y ejecuta la detección.")
         else:
             sc: SceneBundle = res["scene"]
             m_row = res["model_row"]
             summary = res["summary"]
             live_m = res["live_metrics"]
 
-            # Mandatory metadata bar (spec §2)
+            cloud_txt = (
+                f"{sc.cloud_pct:.1f}% (polígono)"
+                if sc.cloud_pct is not None
+                else ("N/D (Sen1Floods11 offline)" if sc.source == "offline" else "N/D")
+            )
             st.markdown(
                 f"**Escena:** `{sc.scene_id}` ({sc.event_name}) | "
                 f"**Modelo:** `{m_row['name']}` (Config **{m_row['config']}**) | "
                 f"**S1:** `{sc.s1_date or 'N/D'}` ({sc.orbit or 'N/D'}) | "
                 f"**S2:** `{sc.s2_date or 'No disponible'}` | "
-                f"**Nubes S2:** `{f'{sc.cloud_pct:.1f}%' if sc.cloud_pct is not None else 'N/D'}` | "
+                f"**Nubes S2:** `{cloud_txt}` | "
                 f"**Desfase S1–S2:** `{f'{res['lag_days']}d' if res['lag_days'] is not None else 'N/D'}` | "
                 f"**Tiempo:** `{res['elapsed_s']}s`"
             )
 
-            # KPI row
             k1, k2, k3, k4, k5 = st.columns(5)
             k1.metric("Inundación (ha)", f"{summary['flooded_ha']:,.1f}")
             k2.metric("Agua permanente (ha)", f"{summary['perm_water_ha']:,.1f}")
             k3.metric("% Área válida inundada", f"{summary['flooded_pct_of_valid']:.1f}%")
             k4.metric("Polígonos", f"{summary['flood_polygon_count']:,}")
             if live_m is not None:
-                k5.metric("Flood IoU (en vivo)", f"{live_m['iou']:.4f}", delta=f"F1 {live_m['f1']:.3f}")
+                k5.metric(
+                    "Flood IoU (en vivo)",
+                    f"{live_m['iou']:.4f}",
+                    delta=f"F1 {live_m['f1']:.3f}",
+                    help="Evalúa agua superficial total detectada (con agua permanente) contra LabelHand, ignorando -1.",
+                )
             else:
                 k5.metric("AOI total (ha)", f"{summary['aoi_ha']:,.1f}")
 
             fmap = _build_result_map(
                 sc,
                 res["post"].flood_mask,
+                res["post"].raw_water_mask,
                 res["post"].perm_water_mask,
+                res["valid_mask"],
                 show_gt=sc.label is not None,
             )
             st_folium(fmap, height=520, width=None, returned_objects=[], key="result_map")
@@ -461,7 +500,7 @@ def main() -> None:
 
                 if live_m is not None:
                     st.caption(
-                        f"Evaluación contra `LabelHand` (ignorando `-1`): "
+                        f"Evaluación agua total vs `LabelHand` (ignorando `-1`, sin restar agua permanente): "
                         f"**IoU** `{live_m['iou']:.4f}` · **F1** `{live_m['f1']:.4f}` · "
                         f"**Precision** `{live_m['precision']:.4f}` · **Recall** `{live_m['recall']:.4f}`"
                     )

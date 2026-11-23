@@ -9,9 +9,9 @@ from typing import Any
 
 import geopandas as gpd
 import numpy as np
-from shapely.geometry import box
+from shapely.geometry import box, shape
 
-from core.db import DEFAULT_DB_PATH, get_connection, init_db
+from core.db import DEFAULT_DB_PATH, PROJECT_ROOT, get_connection, init_db
 from core.postproc import PostprocResult
 
 
@@ -35,24 +35,28 @@ def check_config_b_eligibility(
     if not s2_available:
         return False, "No hay escena Sentinel-2 disponible para esta zona/fecha. Usa Config A (SAR + Terreno)."
     if s1_s2_lag_days is not None and s1_s2_lag_days > max_lag_days:
-        return (
-            False,
+        msg = (
             f"Desfase S1–S2 de {s1_s2_lag_days} días (máximo permitido: {max_lag_days}). "
-            "Usa Config A para evitar inconsistencias temporales.",
+            "Usa Config A para evitar inconsistencias temporales."
         )
+        return False, msg
     if cloud_pct is not None and cloud_pct > max_cloud_pct:
-        return (
-            False,
-            f"Cobertura de nubes en Sentinel-2 de {cloud_pct:.1f}% (máximo permitido: {max_cloud_pct:.0f}%). "
-            "Usa Config A (SAR penetra nubes).",
+        msg = (
+            f"Cobertura de nubes en Sentinel-2 de {cloud_pct:.1f}% "
+            f"(máximo permitido: {max_cloud_pct:.0f}%). Usa Config A (SAR penetra nubes)."
         )
+        return False, msg
     return True, "Sentinel-2 útil y dentro de los límites de nubes y desfase temporal."
 
 
-def compute_aoi_area_ha(bounds: tuple[float, float, float, float], crs: Any = "EPSG:4326") -> float:
-    """Compute exact area in hectares of a bounding box `(left, bottom, right, top)`."""
-    poly = box(*bounds)
-    gdf = gpd.GeoDataFrame(geometry=[poly], crs=crs)
+def compute_aoi_area_ha(
+    bounds: tuple[float, float, float, float],
+    crs: Any = "EPSG:4326",
+    polygon_geojson: dict[str, Any] | None = None,
+) -> float:
+    """Compute exact area in hectares of a GeoJSON polygon or bounding box."""
+    geom = shape(polygon_geojson) if polygon_geojson is not None else box(*bounds)
+    gdf = gpd.GeoDataFrame(geometry=[geom], crs="EPSG:4326" if polygon_geojson else crs)
     if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
         gdf = gdf.to_crs("EPSG:4326")
     utm = gdf.estimate_utm_crs()
@@ -93,9 +97,10 @@ def summarize_analysis(
     bounds: tuple[float, float, float, float],
     crs: Any,
     terrain: np.ndarray | None = None,
+    polygon_geojson: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Produce structured metric area + zonal statistics summary for UI and AI tools."""
-    aoi_ha = compute_aoi_area_ha(bounds, crs=crs)
+    aoi_ha = compute_aoi_area_ha(bounds, crs=crs, polygon_geojson=polygon_geojson)
     flooded_ha = float(post.flood_gdf["area_ha"].sum()) if len(post.flood_gdf) > 0 else 0.0
     perm_water_ha = (
         float(post.perm_water_gdf["area_ha"].sum()) if len(post.perm_water_gdf) > 0 else 0.0
@@ -110,7 +115,7 @@ def summarize_analysis(
         "flooded_ha": round(flooded_ha, 2),
         "perm_water_ha": round(perm_water_ha, 2),
         "total_water_ha": round(flooded_ha + perm_water_ha, 2),
-        "flood_polygon_count": int(len(post.flood_gdf)),
+        "flood_polygon_count": len(post.flood_gdf),
         "largest_polygon_ha": round(float(post.flood_gdf["area_ha"].max()), 2)
         if len(post.flood_gdf) > 0
         else 0.0,
@@ -118,6 +123,16 @@ def summarize_analysis(
         "valid_pixel_pct": round(100.0 * valid_px / max(valid_mask.size, 1), 2),
         "zonal_stats": compute_zonal_stats(post.flood_mask, terrain),
     }
+
+
+def _to_rel_path(path: Path | str | None) -> str | None:
+    if path is None:
+        return None
+    p = Path(path)
+    try:
+        return str(p.resolve().relative_to(PROJECT_ROOT))
+    except ValueError:
+        return str(p)
 
 
 def save_analysis_record(
@@ -161,8 +176,8 @@ def save_analysis_record(
                 flooded_ha,
                 perm_water_ha,
                 live_iou,
-                str(raster_path) if raster_path else None,
-                str(vector_path) if vector_path else None,
+                _to_rel_path(raster_path),
+                _to_rel_path(vector_path),
             ),
         )
         return int(cur.lastrowid)

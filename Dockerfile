@@ -22,7 +22,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.9.6 /uv /usr/local/bin/uv
 WORKDIR /app
 
 COPY pyproject.toml ./
-RUN uv pip install --system --no-cache .
+RUN uv pip install --system --no-cache ".[gee,ai]"
 
 COPY app ./app
 COPY core ./core

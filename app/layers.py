@@ -76,6 +76,29 @@ def render_mask_rgba(
     return out
 
 
+def render_error_map_rgba(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    valid_mask: np.ndarray,
+    alpha: int = 195,
+) -> np.ndarray:
+    """Render TP (green), FP (red), FN (yellow) validation overlay; TN and -1 stay transparent."""
+    h, w = y_true.shape
+    out = np.zeros((h, w, 4), dtype=np.uint8)
+    usable = valid_mask & (y_true != -1)
+    yt = (y_true == 1) & usable
+    yp = (y_pred > 0) & usable
+
+    tp = yt & yp
+    fp = (~yt) & yp & usable
+    fn = yt & (~yp)
+
+    out[tp] = (34, 197, 94, alpha)    # Green: True Positive
+    out[fp] = (239, 68, 68, alpha)    # Red: False Positive
+    out[fn] = (250, 204, 21, alpha)   # Yellow: False Negative
+    return out
+
+
 def rgba_to_data_url(rgba: np.ndarray) -> str:
     """Encode an `(H, W, 4)` uint8 array as a base64 PNG data URI for Folium."""
     img = Image.fromarray(rgba, mode="RGBA")

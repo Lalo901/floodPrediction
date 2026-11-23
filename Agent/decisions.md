@@ -79,10 +79,11 @@ Entrenamiento ejecutado con `training/train_trees.py` optimizando **Flood IoU** 
 | `lightgbm_B` | S1 + S2 + Terreno | 21 | 0.8752 | **0.8869** | 0.9401 | 0.9490 | 0.9313 | **0.8338** | **0.38 MB** |
 | `rf_B` | S1 + S2 + Terreno | 21 | 0.8832 | **0.8926** | 0.9433 | 0.9526 | 0.9341 | **0.8338** | **7.24 MB** |
 
-### Conclusiones de la Ablación
-1. **Salto abismal con Sentinel-2 (Config B):** Agregar Sentinel-2 eleva el IoU de **~0.63 a casi 0.90** (F1 > 0.94). Confirma la decisión arquitectónica de ofrecer modo dual: Config A (operativa con nubes) y Config B (máxima precisión cuando despeja).
-2. **Modelos ultra livianos para CPU en Space:** Random Forest pasó de los **2.0 GB** inmanejables de la versión legacy a solo **7.2 - 8.9 MB** manteniendo máximo rendimiento, y LightGBM pesa **< 0.5 MB** con inferencia instantánea.
-3. **Persistencia y contrato:** Todos los artefactos fueron empaquetados bajo el estándar `FloodModel` en `models/` y guardados en SQLite con sus hiperparámetros y umbrales óptimos.
+### Conclusiones de la Ablación (verificadas por evento)
+1. **Terreno (Config A vs Solo S1 en árboles):** sumar `Slope + HAND + DEM_rel` mejora claramente llanuras aluviales húmedas como `Paraguay` (`0.56 -> 0.65`, `+9 pts`) y sube `+1.0 a +1.5 pts` el Test global (`0.622 -> 0.637`), **pero no resuelve zonas áridas planas** (`Pakistan`: `0.16`, `Somalia`: `0.27–0.28`) porque la arena seca también yace en zonas de `HAND` bajo, y reduce `-4 pts` en `Bolivia` (`0.604 -> 0.564`) por leve sobreajuste tabular a la topografía de otros países.
+2. **Salto decisivo con Sentinel-2 (Config B):** agregar Sentinel-2 L1C + `NDWI`/`MNDWI`/`AWEI` resuelve el fallo físico del SAR en zonas áridas (`Pakistan`: `0.16 -> 0.87`, `Somalia`: `0.27 -> 0.91`) y eleva el Test global a **`0.8926`** (Bolivia **`0.8338`**).
+3. **Contexto espacial en DeepLabV3+ (Config A):** supera ampliamente a los árboles en Test (`0.6889`) y recupera por completo la generalización en Bolivia (`0.6949`, `+12.9 pts` sobre árboles A).
+4. **Modelos ultra livianos para CPU en Space:** Random Forest pasó de los **2.0 GB** legacy a **7.2–8.9 MB** y LightGBM pesa **< 0.5 MB**. Todos quedaron empaquetados bajo `FloodModel` en `models/` y registrados en SQLite.
 
 ---
 
@@ -94,15 +95,22 @@ Entrenado en Google Colab (GPU T4, 40 épocas, crops 256×256, `MaskedBCEDiceLos
 - **Test (90 chips):** **`IoU = 0.6889`**, `F1 = 0.8158`, `Prec = 0.8157`, `Rec = 0.8159` (**+5.2 pts** sobre `rf_A` y **+14.3 pts** sobre Otsu)
 - **Bolivia (15 chips, OOD):** **`IoU = 0.6949`**, `F1 = 0.8200`, `Prec = 0.8219`, `Rec = 0.8181` (**+12.9 pts** sobre árboles en Config A)
 - **Exportación ONNX:** PyTorch 2.x con `dynamo=True` separaba los pesos en `.onnx.data` (0.27 MB + 85 MB). Se re-exportó con `dynamo=False` (`opset_version=17`) obteniendo un único archivo autocontenido `deeplabv3plus_A.onnx` (**89.8 MB**), verificado con `onnxruntime` CPU.
-- **DeepLabV3+ Config B:** lanzado en paralelo en Colab (40 épocas, 21 canales).
+### DeepLabV3+ (`resnet34`, Config B: 21 canales S1 + S2 + Terreno)
+Entrenado en Google Colab (GPU T4, 40 épocas, re-export autocontenido `dynamo=False`, `90.0 MB`):
+- **Valid (thr=0.575):** `IoU = 0.8240`, `F1 = 0.9035`
+- **Test (90 chips):** `IoU = 0.8311`, `F1 = 0.9078`, `Prec = 0.9144`, `Rec = 0.9013`
+- **Bolivia (15 chips, OOD):** `IoU = 0.7937`, `F1 = 0.8850`, `Prec = 0.9414`, `Rec = 0.8350`
+- **Conclusión honesta DL vs Árboles:** en **Config A (SAR ruidoso)** gana claramente DeepLabV3+ (`0.6889` test / `0.6949` Bolivia vs `0.637` / `0.566` de RF A); en **Config B (con índices ópticos S2 limpios sobre 252 chips)** ganan **RF B (`0.8926`)** y **LightGBM B (`0.8869`)** con `< 8 MB` y mucha mayor velocidad en CPU.
 
-### Validación End-to-End Fase 3
-- Implementados `core/data.py`, `core/postproc.py`, `core/analytics.py`, `app/layers.py` y `app/main.py` (modos offline, subida GeoTIFF y polígono GEE en vivo).
-- Suite `pytest`: **8 passed** en `1.48s`. En `Bolivia_103757`, `lightgbm_B` obtuvo **`IoU = 0.9037`** (vs `0.4778` del RF legacy de 2 GB).
+### Validación End-to-End Fase 3 y Correcciones de Auditoría
+- Aplicadas todas las correcciones de `Agent/auditoria.md` sin requerir reentrenar ningún modelo:
+  - `core/inference.py`: sliding window ONNX con solapamiento (`overlap=32`) y ventana coseno.
+  - `core/data.py`: clip exacto al polígono en GEE, Cloud Score+ sobre el polígono para nubes S2, `dem_rel` a escala métrica fija (~510 m), unión JRC+MERIT para agua permanente, sanitización de nombres y `GEE_PROJECT_ID` solo desde entorno.
+  - `app/main.py` + `app/layers.py`: capa **Mapa de Errores (TP/FP/FN)**, ocultado botón fantasma en modo GEE, `event_id` y rutas relativas en SQLite, rotación automática de `data/outputs/`.
+  - `Dockerfile` actualizado con `.[gee,ai]`, links relativos portables en `AGENTS.md`/`Agent/plan.md`, `ruff check` limpio y suite `pytest` compatible con CI.
 
 ---
 
 <!-- Próximas entradas esperadas:
-## YYYY-MM-DD — Resultados DeepLabV3+ Config B ONNX y registro CPU
-## YYYY-MM-DD — Asistente IA y Despliegue en Hugging Face Space (Fase 4)
+## YYYY-MM-DD — Registro CPU de DeepLabV3+ A/B y Asistente IA + Deploy HF Space (Fase 4)
 -->

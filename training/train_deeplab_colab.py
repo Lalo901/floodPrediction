@@ -33,8 +33,8 @@ from pathlib import Path
 import numpy as np
 import rasterio
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 # Allow running standalone in Colab when repo is cloned or on sys.path
@@ -42,7 +42,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from core.features import ConfigName, FEATURE_NAMES_BY_CONFIG, build_feature_stack
+from core.features import FEATURE_NAMES_BY_CONFIG, ConfigName, build_feature_stack
 from core.metrics import ConfusionStats
 
 
@@ -257,6 +257,7 @@ def export_onnx(model: nn.Module, in_channels: int, out_path: Path, tile_size: i
         input_names=["input"],
         output_names=["logits"],
         opset_version=17,
+        dynamo=False,
         dynamic_axes={"input": {0: "batch"}, "logits": {0: "batch"}},
     )
 

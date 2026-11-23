@@ -10,7 +10,6 @@ Usage:
 
 from __future__ import annotations
 
-import io
 import json
 import os
 from datetime import datetime, timedelta
@@ -83,9 +82,8 @@ def compute_pixels_geotiff(ee_image: ee.Image, ref_profile: dict) -> np.ndarray:
         },
     }
     raw_bytes = ee.data.computePixels(request)
-    with rasterio.MemoryFile(raw_bytes) as mem:
-        with mem.open() as src:
-            return src.read()
+    with rasterio.MemoryFile(raw_bytes) as mem, mem.open() as src:
+        return src.read()
 
 
 def compare_arrays(local: np.ndarray, gee: np.ndarray) -> dict[str, float]:
@@ -119,7 +117,9 @@ def date_window(date_str: str, pad_days: int = 1) -> tuple[str, str]:
 
 def run_parity() -> dict:
     load_dotenv(PROJECT_ROOT / ".env")
-    project_id = os.getenv("GEE_PROJECT_ID", "flood-mapper-mvp")
+    project_id = os.getenv("GEE_PROJECT_ID")
+    if not project_id:
+        raise RuntimeError("Define GEE_PROJECT_ID en .env antes de ejecutar la prueba de paridad.")
     ee.Initialize(project=project_id)
 
     event_meta = load_event_metadata()

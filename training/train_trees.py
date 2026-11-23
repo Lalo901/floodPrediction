@@ -33,7 +33,7 @@ import optuna
 import rasterio
 from sklearn.ensemble import RandomForestClassifier
 
-from core.features import ConfigName, FEATURE_NAMES_BY_CONFIG, build_feature_stack
+from core.features import FEATURE_NAMES_BY_CONFIG, ConfigName, build_feature_stack
 from core.inference import FloodModel, ModelMetadata
 from core.metrics import ConfusionStats, find_best_threshold
 from core.registry import register_model

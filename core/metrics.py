@@ -6,8 +6,8 @@ and compute micro-averaged statistics by accumulating TP, FP, FN, TN across chip
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 import numpy as np
 
@@ -69,7 +69,7 @@ class ConfusionStats:
         self.fn += int(np.count_nonzero(yt_v & (~yp_v)))
         self.tn += int(np.count_nonzero((~yt_v) & (~yp_v)))
 
-    def merge(self, other: "ConfusionStats") -> "ConfusionStats":
+    def merge(self, other: ConfusionStats) -> ConfusionStats:
         """Return a new ConfusionStats combining self and other."""
         return ConfusionStats(
             tp=self.tp + other.tp,

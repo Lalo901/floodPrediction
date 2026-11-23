@@ -17,6 +17,7 @@ from typing import Any
 
 import geopandas as gpd
 import numpy as np
+import pandas as pd
 import rasterio
 from rasterio.features import rasterize, shapes
 from scipy.ndimage import median_filter
@@ -62,10 +63,6 @@ def _vectorize_binary_mask(
     if min_area_ha > 0:
         gdf = gdf[gdf["area_ha"] >= float(min_area_ha)].reset_index(drop=True)
     return gdf
-
-
-# Local pandas import kept top-level for empty GeoDataFrame construction
-import pandas as pd
 
 
 def run_postprocessing(

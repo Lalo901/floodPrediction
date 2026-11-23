@@ -27,11 +27,12 @@ Métrica principal: **Flood IoU** (índice Jaccard de la clase agua acumulado gl
 | `lightgbm_A` | **Config A** (S1 + Terreno) | 11 | 0.5859 | 0.6318 | 0.7744 | 0.5644 | 0.43 MB |
 | `rf_A` | **Config A** (S1 + Terreno) | 11 | 0.5925 | 0.6366 | 0.7779 | 0.5659 | 8.88 MB |
 | **`deeplabv3plus_A`** (`resnet34` ONNX) | **Config A** (S1 + Terreno) | 11 | **0.6773** | **0.6889** | **0.8158** | **0.6949** | 89.8 MB |
+| `deeplabv3plus_B` (`resnet34` ONNX) | **Config B** (S1 + S2 + Terreno) | 21 | 0.8240 | 0.8311 | 0.9078 | 0.7937 | 90.0 MB |
 | `lightgbm_B` | **Config B** (S1 + S2 + Terreno) | 21 | 0.8752 | 0.8869 | 0.9401 | 0.8338 | 0.38 MB |
 | **`rf_B`** | **Config B** (S1 + S2 + Terreno) | 21 | **0.8832** | **0.8926** | **0.9433** | **0.8338** | 7.24 MB |
 
-- **Config A (operativa todo-clima):** funciona bajo nubes densas usando radar SAR + terreno (`COPERNICUS/DEM/GLO30_2024_1` + `MERIT Hydro hnd`). `DeepLabV3+` logra el mejor rendimiento espacial y generalización a Bolivia (`+12.9` puntos de IoU sobre árboles).
-- **Config B (máxima precisión despejada):** incorpora 6 bandas Sentinel-2 L1C + índices `NDWI`, `MNDWI`, `NDVI`, `AWEI`. En la app se bloquea automáticamente con aviso explicativo si la cobertura de nubes supera 30% o el desfase S1–S2 supera 3 días.
+- **Config A (operativa todo-clima):** funciona bajo nubes densas usando radar SAR + terreno (`COPERNICUS/DEM/GLO30_2024_1` + `MERIT Hydro hnd`). Aquí **`DeepLabV3+ A`** lidera claramente (`+5.2` pts en Test y `+12.9` pts en Bolivia sobre árboles) porque aprovecha el contexto espacial frente al ruido SAR.
+- **Config B (máxima precisión despejada):** incorpora 6 bandas Sentinel-2 L1C + índices `NDWI`, `MNDWI`, `NDVI`, `AWEI`, resolviendo zonas áridas (`Pakistan`: `0.16 → 0.87`, `Somalia`: `0.27 → 0.91`). Con solo 252 chips y señal óptica muy limpia, **`RF B` / `LightGBM B`** superan a `DeepLabV3+ B` con una fracción del tamaño (`0.38–7.2 MB` vs `90 MB`). En la app Config B se bloquea automáticamente si las nubes dentro del polígono superan 30% o el desfase S1–S2 supera 3 días.
 
 ---
 
