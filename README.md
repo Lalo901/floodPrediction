@@ -31,17 +31,17 @@ Métrica principal: **Flood IoU** (índice Jaccard de la clase agua acumulado gl
 | `lightgbm_B` | **Config B** (S1 + S2 + Terreno) | 21 | 0.8752 | 0.8869 | 0.9401 | 0.8338 | 0.38 MB |
 | **`rf_B`** | **Config B** (S1 + S2 + Terreno) | 21 | **0.8832** | **0.8926** | **0.9433** | **0.8338** | 7.24 MB |
 
-- **Config A (operativa todo-clima):** funciona bajo nubes densas usando radar SAR + terreno (`COPERNICUS/DEM/GLO30_2024_1` + `MERIT Hydro hnd`). Aquí **`DeepLabV3+ A`** lidera claramente (`+5.2` pts en Test y `+12.9` pts en Bolivia sobre árboles) porque aprovecha el contexto espacial frente al ruido SAR.
-- **Config B (máxima precisión despejada):** incorpora 6 bandas Sentinel-2 L1C + índices `NDWI`, `MNDWI`, `NDVI`, `AWEI`, resolviendo zonas áridas (`Pakistan`: `0.16 → 0.87`, `Somalia`: `0.27 → 0.91`). Con solo 252 chips y señal óptica muy limpia, **`RF B` / `LightGBM B`** superan a `DeepLabV3+ B` con una fracción del tamaño (`0.38–7.2 MB` vs `90 MB`). En la app Config B se bloquea automáticamente si las nubes dentro del polígono superan 30% o el desfase S1–S2 supera 3 días.
+- **Config A (operativa todo-clima):** funciona bajo nubes densas usando radar SAR + terreno (`COPERNICUS/DEM/GLO30_2024_1` + `MERIT Hydro hnd`). Aquí **`DeepLabV3+ A`** lidera claramente (`+5.2` pts en Test y `+12.9` pts en Bolivia sobre árboles) porque aprovecha el contexto espacial frente al ruido SAR, e infiere un chip `512×512` en **`0.79 s` en CPU** vía ONNX Runtime.
+- **Config B (máxima precisión despejada):** incorpora 6 bandas Sentinel-2 L1C + índices `NDWI`, `MNDWI`, `NDVI`, `AWEI`, resolviendo zonas áridas (`Pakistan`: `0.16 → 0.87`, `Somalia`: `0.27 → 0.91`). Con solo 252 chips y señal óptica muy limpia, **`RF B` / `LightGBM B`** superan a `DeepLabV3+ B` (`0.76 s` CPU) con una fracción del tamaño (`0.38–7.2 MB` vs `85.8 MiB`). En la app Config B se bloquea automáticamente si las nubes dentro del polígono superan 30% o el desfase S1–S2 supera 3 días.
 
 ---
 
 ## Características de la App
 
 - **3 fuentes de datos unificadas ([`core/data.py`](core/data.py)):**
-  - **Modo Offline:** chips `HandLabeled` de Sen1Floods11 con cálculo de **Flood IoU en vivo** contra `LabelHand`.
+  - **Modo Offline:** chips `HandLabeled` de Sen1Floods11 con cálculo de **Flood IoU en vivo** y capa **Mapa de Errores (`TP` verde / `FP` rojo / `FN` amarillo)** contra `LabelHand`.
   - **Subida de GeoTIFF:** S1 (VV, VH en dB) + opcional S2 y enriquecimiento automático de terreno vía GEE.
-  - **Polígono en vivo (Google Earth Engine):** dibujo en mapa `streamlit-folium` (máx. 20 km/lado), consulta de escenas S1/S2 con paridad verificada (`corr = 1.0000`).
+  - **Polígono en vivo (Google Earth Engine):** dibujo en mapa `streamlit-folium` (máx. 20 km/lado), clip exacto al polígono, máscara de nubes **Cloud Score+** sobre el polígono y consulta de escenas S1/S2 con paridad verificada (`corr = 1.0000`).
 - **Postproceso uniforme y analítica rigurosa ([`core/postproc.py`](core/postproc.py), [`core/analytics.py`](core/analytics.py)):**
   - Separación de agua permanente (JRC / MERIT `wat`), filtro de mediana, área mínima configurable.
   - Cálculo exacto de **hectáreas en CRS métrico UTM** y estadísticas zonales (`Slope`, `HAND`, `DEM_rel`).

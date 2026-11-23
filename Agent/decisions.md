@@ -109,8 +109,13 @@ Entrenado en Google Colab (GPU T4, 40 épocas, re-export autocontenido `dynamo=F
   - `app/main.py` + `app/layers.py`: capa **Mapa de Errores (TP/FP/FN)**, ocultado botón fantasma en modo GEE, `event_id` y rutas relativas en SQLite, rotación automática de `data/outputs/`.
   - `Dockerfile` actualizado con `.[gee,ai]`, links relativos portables en `AGENTS.md`/`Agent/plan.md`, `ruff check` limpio y suite `pytest` compatible con CI.
 
+- **Verificación CPU (`training/register_onnx.py`, `Bolivia_103757`, 512×512 con sliding window + overlap 32):**
+  - `deeplabv3plus_A` (SQLite `id=6`): **`0.79s`** en CPU (`IoU = 0.8024`, `F1 = 0.8904`).
+  - `deeplabv3plus_B` (SQLite `id=7`): **`0.76s`** en CPU (`IoU = 0.8540`, `F1 = 0.9212`).
+  - Los **7 modelos** del MVP están activos y verificados en `data/flood.db`.
+
 ---
 
 <!-- Próximas entradas esperadas:
-## YYYY-MM-DD — Registro CPU de DeepLabV3+ A/B y Asistente IA + Deploy HF Space (Fase 4)
+## YYYY-MM-DD — Asistente IA y Despliegue en Hugging Face Space (Fase 4)
 -->
