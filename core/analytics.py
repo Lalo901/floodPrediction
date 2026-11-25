@@ -157,13 +157,13 @@ def compute_scene_reliability_badge(
     if config_used == "B" and (cloud_pct is None or cloud_pct <= 15.0) and (lag_days is None or lag_days <= 2):
         return {
             "level": "high",
-            "title": "🟢 Alta confiabilidad operativa (Config B: S1 + S2 despejado)",
+            "title": "Alta confiabilidad operativa (Config B: S1 + S2 despejado)",
             "detail": "Fusión SAR + óptica con baja nubosidad y desfase mínimo. Máxima precisión esperada.",
         }
     if uncertain_area_pct > 12.0:
         return {
             "level": "warning",
-            "title": "⚠️ Precaución: zona con incertidumbre moderada/alta",
+            "title": "Precaución: zona con incertidumbre moderada/alta",
             "detail": (
                 f"El {uncertain_area_pct:.1f}% del área presenta probabilidades intermedias (0.35–0.65). "
                 "Revisa las capas de Probabilidad y NDWI/MNDWI antes de tomar decisiones."
@@ -172,7 +172,7 @@ def compute_scene_reliability_badge(
     if config_used == "A":
         return {
             "level": "medium",
-            "title": "🟡 Modo operativo todo-clima (Config A: SAR + Terreno)",
+            "title": "Modo operativo todo-clima (Config A: SAR + Terreno)",
             "detail": (
                 "Funciona bajo nubes y tormentas. En zonas áridas planas puede haber falsos positivos en suelo seco; "
                 "validar con HAND y, cuando despeje, con Config B."
@@ -180,7 +180,7 @@ def compute_scene_reliability_badge(
         }
     return {
         "level": "medium",
-        "title": "🟡 Modo referencia (Solo SAR — ablación)",
+        "title": "Modo referencia (Solo SAR — ablación)",
         "detail": "Sin variables de terreno ni Sentinel-2; úsalo solo como referencia comparativa.",
     }
 

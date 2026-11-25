@@ -207,6 +207,35 @@ def render_comparison_rgba(
     return out
 
 
+def render_preview_composite_data_url(
+    s1: np.ndarray,
+    flood_mask: np.ndarray,
+    *,
+    s2: np.ndarray | None = None,
+    perm_water_mask: np.ndarray | None = None,
+    max_side: int = 512,
+) -> str:
+    """Create a lightweight RGB+mask PNG data URI (<=512px) for LLM vision — never raw rasters."""
+    base = render_s2_rgb_rgba(s2) if s2 is not None else render_s1_rgba(s1)
+    comp = base[:, :, :3].astype(np.float32)
+
+    if perm_water_mask is not None:
+        pm = perm_water_mask > 0
+        comp[pm] = 0.45 * comp[pm] + 0.55 * np.array(PERM_WATER_RGB, dtype=np.float32)
+
+    fm = flood_mask > 0
+    comp[fm] = 0.35 * comp[fm] + 0.65 * np.array(FLOOD_WATER_RGB, dtype=np.float32)
+
+    img = Image.fromarray(np.clip(comp, 0, 255).astype(np.uint8), mode="RGB")
+    if max(img.size) > max_side:
+        img.thumbnail((max_side, max_side), Image.Resampling.BILINEAR)
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{b64}"
+
+
 def rgba_to_data_url(rgba: np.ndarray) -> str:
     """Encode an `(H, W, 4)` uint8 array as a base64 PNG data URI for Folium."""
     img = Image.fromarray(rgba, mode="RGBA")
@@ -214,3 +243,56 @@ def rgba_to_data_url(rgba: np.ndarray) -> str:
     img.save(buf, format="PNG")
     b64 = base64.b64encode(buf.getvalue()).decode("ascii")
     return f"data:image/png;base64,{b64}"
+
+
+def _blend_rgba_on_rgb(base_rgb: np.ndarray, overlay_rgba: np.ndarray) -> np.ndarray:
+    alpha = (overlay_rgba[:, :, 3:4].astype(np.float32)) / 255.0
+    ov_rgb = overlay_rgba[:, :, :3].astype(np.float32)
+    out = base_rgb.astype(np.float32) * (1.0 - alpha) + ov_rgb * alpha
+    return np.clip(out, 0, 255).astype(np.uint8)
+
+
+def render_layer_preview_bytes_and_url(
+    res: dict,
+    layer_key: str,
+    *,
+    res2: dict | None = None,
+    max_side: int = 512,
+) -> tuple[bytes, str]:
+    """Render a chosen processed layer as compact PNG bytes + data URI (<=512px) for AI vision."""
+    sc = res["scene"]
+    base_rgba = render_s2_rgb_rgba(sc.s2) if sc.s2 is not None else render_s1_rgba(sc.s1)
+    comp = base_rgba[:, :, :3].copy()
+
+    if layer_key == "model1":
+        if res["post"].perm_water_mask is not None:
+            comp = _blend_rgba_on_rgb(comp, render_mask_rgba(res["post"].perm_water_mask, rgb=PERM_WATER_RGB, alpha=160))
+        comp = _blend_rgba_on_rgb(comp, render_mask_rgba(res["post"].flood_mask, rgb=FLOOD_WATER_RGB, alpha=185))
+    elif layer_key == "model2" and res2 is not None:
+        if res2["post"].perm_water_mask is not None:
+            comp = _blend_rgba_on_rgb(comp, render_mask_rgba(res2["post"].perm_water_mask, rgb=PERM_WATER_RGB, alpha=160))
+        comp = _blend_rgba_on_rgb(comp, render_mask_rgba(res2["post"].flood_mask, rgb=MODEL2_WATER_RGB, alpha=185))
+    elif layer_key == "comparison" and res2 is not None:
+        comp = _blend_rgba_on_rgb(
+            comp,
+            render_comparison_rgba(res["post"].flood_mask, res2["post"].flood_mask, res["valid_mask"], alpha=205),
+        )
+    elif layer_key == "error_map" and sc.label is not None:
+        comp = _blend_rgba_on_rgb(
+            comp,
+            render_error_map_rgba(sc.label, res["post"].raw_water_mask, res["valid_mask"], alpha=200),
+        )
+    elif layer_key == "mndwi" and sc.s2 is not None:
+        comp = render_water_index_rgba(sc.s2, index="mndwi")[:, :, :3]
+    elif layer_key == "hand" and sc.terrain is not None:
+        comp = render_hand_rgba(sc.terrain)[:, :, :3]
+
+    img = Image.fromarray(comp, mode="RGB")
+    if max(img.size) > max_side:
+        img.thumbnail((max_side, max_side), Image.Resampling.BILINEAR)
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    png_bytes = buf.getvalue()
+    b64 = base64.b64encode(png_bytes).decode("ascii")
+    return png_bytes, f"data:image/png;base64,{b64}"
