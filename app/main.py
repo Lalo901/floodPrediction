@@ -100,10 +100,10 @@ BASEMAP_SPECS: dict[str, dict[str, Any]] = {
         "max_zoom": 19,
     },
     "Relieve": {
-        "tiles": "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
-        "attr": "Map data: © OpenStreetMap, SRTM | Style: © OpenTopoMap (CC-BY-SA)",
-        "label": "Relieve (OpenTopoMap)",
-        "max_zoom": 17,
+        "tiles": "https://server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}",
+        "attr": "Esri, National Geographic, Garmin, HERE, UNEP-WCMC, USGS, NASA, ESA, METI, NRCAN, GEBCO, NOAA, increment P Corp.",
+        "label": "Relieve (Esri NatGeo)",
+        "max_zoom": 16,
     },
     "Oscuro": {
         "tiles": "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
