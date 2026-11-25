@@ -116,6 +116,29 @@ Entrenado en Google Colab (GPU T4, 40 épocas, re-export autocontenido `dynamo=F
 
 ---
 
+## 2026-11-24 — Fase 4 Bloque 1: Módulo Extensible de Asistente IA (`ai/`)
+
+### Arquitectura y decisiones
+- **Desacoplamiento total:** lógica de IA aislada en `ai/` (`security.py`, `providers.py`, `tools.py`, `agent.py`, **0 imports de Streamlit**) y vista en `app/assistant_panel.py`, permitiendo reutilizar el mismo núcleo en CLI, API o plugins futuros.
+- **Multi-proveedor extensible:** `AnthropicProvider` nativo + `OpenAICompatibleProvider` cubriendo **Google Gemini** (`generativelanguage.googleapis.com/v1beta/openai/`), **OpenAI**, **OpenRouter**, **Groq**, **cualquier endpoint OpenAI HTTPS personalizado** y **Ollama / LM Studio local** (solo `APP_MODE=local`, con auto-descubrimiento `/api/tags`).
+- **Herramientas acotadas + auditoría:** 7 herramientas en whitelist (`get_analysis_summary`, `get_top_hotspots`, `get_zonal_stats`, `filter_by_min_area`, `compare_models`, `list_registered_models`, `get_export_info`), cero ejecución libre de código, 100% registradas en SQLite (`tool_calls`).
+- **Modo rápido CPU + fallback local:** `force_single_turn=True` (por defecto en modelos locales sin GPU como `gemma4-ajustado:latest` 8B) y fallback automático cuando un modelo no soporta tool calling nativo.
+- **Seguridad verificada (`tests/test_ai_module.py`):** anti-SSRF en `validate_endpoint_url` (bloquea `169.254.169.254`, loopback y RFC1918 en `APP_MODE=space`), redacción automática de API keys en errores y `__repr__`, confirmación de privacidad para proveedores externos y límite de 4 rondas de tools.
+- **Fix modelos "thinking" en Ollama (`gemma4-ajustado:latest`):** se agregó `disable_thinking=True` (`extra_body={"think": False}`) + fallback a `reasoning_content`/`reasoning` y reintento automático a solo-texto cuando un modelo no soporta visión multimodal.
+
+---
+
+## 2026-11-25 — UX GIS de Escritorio sin Iconos, Conectores GIS y Administrador de Complementos
+
+### Decisiones y mejoras implementadas
+- **Interfaz map-first sin iconos (`app/main.py`):** mapa interactivo visible desde el arranque (>80% del ancho con `Datos` abierto, 100% al cerrar), barra superior uniforme con menús desplegables `st.popover` de ancho fijo (`390 px`) para `Herramientas`, `Complementos` y `Ayuda`, `LayerControl` compacto oscuro (`215 × 215 px`) con scroll vertical, control rápido de opacidad (`40–100%`) y enfoque directo a Focos Críticos `#1–#5` (`zoom=15`).
+- **Buscador geográfico (`core/geocoding.py`):** geocodificación por país/provincia/ciudad (Nominatim HTTPS con caché 1 h) y coordenadas directas `lat, lon` offline.
+- **Mapas base verificados sin API key:** `Satélite` (Esri Imagery), `Calles` (OSM), `Relieve` (OpenTopoMap) y `Oscuro` (Esri Dark Gray Base + Reference, reemplazando CARTO tras cierre de tiles sin API key).
+- **Conectores GIS y Plugins (`core/exports_gis.py`, `plugins/manager.py`, `app/plugins_panel.py`):** exportación directa de estilos QGIS (`.qml`), capas MapLibre/GeoLibre (`.json`), buffer métrico UTM (`+50/+100/+250/+500 m`), Reporte Ejecutivo (`.md`) y catálogo open-source en lista blanca (`whitebox`, `osmnx`, `rasterstats`, `contextily`, `leafmap`) instalable únicamente en `APP_MODE=local` con confirmación en 2 pasos.
+- **Historial navegable + latencia:** tabla clicable (`on_select="rerun"`) con `Cargar en el Mapa` (offline + GeoTIFF guardados en `data/outputs/` sin duplicar filas SQLite), validación anti path-traversal (`_safe_output_file`) y caché de overlays PNG/buffers (`26 passed` en `pytest`, `0` avisos en `ruff`).
+
+---
+
 <!-- Próximas entradas esperadas:
-## YYYY-MM-DD — Asistente IA y Despliegue en Hugging Face Space (Fase 4)
+## YYYY-MM-DD — Fase 4 Bloque 2: Bootstrap HF Hub, Docker y Deploy en Hugging Face Space
 -->

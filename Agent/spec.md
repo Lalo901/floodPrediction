@@ -26,13 +26,13 @@ Aplicación web en **Streamlit** donde el usuario **dibuja un polígono** en un 
 
 El MVP está terminado si se cumple todo lo siguiente:
 
-- [ ] Al menos **6 modelos seleccionables** (RF liviano, LightGBM y DeepLabV3+ en configuraciones A y B, o mínimo 5 si se aplica corte de DeepLab B), con métricas registradas en SQLite (`models`).
-- [ ] Un evento de Sen1Floods11 funciona de punta a punta con **Flood IoU en vivo** contra `LabelHand`.
-- [ ] Un polígono libre funciona (modo GEE en vivo si pasa paridad el Día 3, o subida de GeoTIFF / datos precargados).
-- [ ] Exportación funcional a **GeoTIFF** y **GeoPackage / GeoJSON**.
-- [ ] La UI siempre muestra: fecha de captura S1 (y S2 si aplica), % de nubes (S2), desfase S1–S2, modelo y configuración usada.
-- [ ] Asistente de IA responde sobre el resultado ejecutando herramientas registradas en `tool_calls`.
-- [ ] Repo en GitHub y despliegue en **Hugging Face Space (Docker)** (o, como mínimo de respaldo, demo local corriendo en Docker).
+- [x] Al menos **6 modelos seleccionables** (7 registrados: RF liviano, LightGBM y DeepLabV3+ ONNX en A y B + `lightgbm_S1_only` ablación), con métricas registradas en SQLite (`models`).
+- [x] Un evento de Sen1Floods11 funciona de punta a punta con **Flood IoU en vivo** contra `LabelHand`.
+- [x] Un polígono libre funciona (GEE en vivo aprobado en paridad Día 3 + subida de GeoTIFF + modo offline).
+- [x] Exportación funcional a **GeoTIFF** y **GeoPackage / GeoJSON**.
+- [x] La UI siempre muestra: fecha de captura S1 (y S2 si aplica), % de nubes (S2), desfase S1–S2, modelo y configuración usada.
+- [x] Asistente de IA responde sobre el resultado ejecutando herramientas registradas en `tool_calls` *(módulo `ai/` + `app/assistant_panel.py`, Bloque 1 completado)*.
+- [ ] Repo en GitHub (`main` subido) y despliegue en **Hugging Face Space (Docker)** *(Bloque 2 — Fase 4)*.
 
 ---
 
@@ -47,10 +47,10 @@ El MVP está terminado si se cumple todo lo siguiente:
 | Configuraciones | **A:** S1 + Slope + HAND + DEM_rel (operativa todo-clima). **B:** S1 + S2 + Slope + HAND + DEM_rel (máxima precisión despejada) |
 | Dataset entrenamiento | **Solo los 446 chips `HandLabeled`** de Sen1Floods11 (`WeaklyLabeled` fuera del MVP) |
 | Métrica objetivo | **Flood IoU** (clase 1 = agua, ignorando `-1`, micro-IoU global). Reportar además F1, Precision, Recall por split y por evento |
-| DEM / Slope / HAND | **Estáticos precalculados** (Copernicus GLO-30 + MERIT Hydro `hnd`), nunca calculados por chip ni en vivo |
-| Fuente S1 / S2 en vivo | Google Earth Engine (sujeto a prueba de paridad Día 3), siempre con **modo offline** y **subida de GeoTIFF** como respaldo |
+| DEM / Slope / HAND | **Estáticos precalculados** (`COPERNICUS/DEM/GLO30_2024_1` + MERIT Hydro `hnd`), nunca calculados por chip |
+| Fuente S1 / S2 en vivo | Google Earth Engine (paridad aprobada `corr=1.0000`, Cloud Score+ sobre polígono), con **modo offline** y **subida de GeoTIFF** |
 | Despliegue | Docker (uid 1000 no-root, puerto `8501`, `onnxruntime` CPU, `libgomp1`). Pesos en Hugging Face Hub |
-| IA | BYOK (Anthropic / Gemini) + endpoint OpenAI-compatible (Ollama local). Herramientas acotadas, sin ejecución libre de código |
+| IA (módulo `ai/`) | Activación opcional; **cualquier proveedor BYOK** (Anthropic, Gemini, OpenAI, OpenRouter, Groq, OpenAI-compatible personalizado) + **Ollama/LM Studio local** (solo `APP_MODE=local`). Herramientas acotadas, protección anti-SSRF, sin ejecución libre de código |
 
 ---
 
@@ -71,7 +71,7 @@ Ubicación local (excluida de git): `dataset/` (sin carpeta `v1.1/`).
   - `flood_bolivia_data.csv`: 15 chips (evaluación out-of-distribution aparte)
   - *Nota metodológica:* el split oficial de Sen1Floods11 es por chip, no por evento (excepto Bolivia). Debe declararse en la presentación.
 - **Metadatos:** `dataset/Sen1Floods11_Metadata.geojson` (fechas S1/S2, órbita, polígonos, `VH_thresh`).
-- **Terreno derivado (a generar en Fase 1):** `dataset/derived/TerrainHand/` con `Slope`, `HAND` (MERIT Hydro `hnd`) y `DEM_rel` alineados a la grilla 512×512 de los 446 chips.
+- **Terreno derivado (generado en Fase 1):** `dataset/derived/TerrainHand/` con `Slope`, `HAND` (MERIT Hydro `hnd`), `DEM_rel` y `merit_wat` alineados a la grilla 512×512 de los 446 chips (`446/446`, 0 errores).
 
 ---
 
@@ -80,24 +80,30 @@ Ubicación local (excluida de git): `dataset/` (sin carpeta `v1.1/`).
 ```text
 floodPrediction/
 ├── AGENTS.md                 # Guía operativa breve para agentes
+├── DOCUMENTACION.md          # Guía de uso para usuarios finales
 ├── Agent/
 │   ├── spec.md               # Este documento (contrato técnico)
 │   ├── plan.md               # Plan por fases (Fases 0 a 4) y checkpoints
-│   └── decisions.md          # Bitácora de decisiones y hallazgos
-├── app/                      # Streamlit UI: mapa, paneles, estado de sesión
+│   ├── decisions.md          # Bitácora de decisiones y hallazgos
+│   └── auditoria.md          # Auditoría técnica, científica y de seguridad
+├── app/                      # Streamlit UI: main.py, layers.py, assistant_panel.py
 ├── core/
 │   ├── db.py                 # Conexión y esquema SQLite
 │   ├── registry.py           # Consulta tabla models y carga artefactos FloodModel
 │   ├── metrics.py            # Flood IoU, F1, Precision, Recall (ignorando -1)
 │   ├── features.py           # Construcción determinista de stacks Config A y B
 │   ├── data.py               # Fuentes: offline, GeoTIFF subido, GEE en vivo
-│   ├── inference.py          # Artefacto FloodModel: árboles por lotes / DeepLab ONNX por tiles
+│   ├── inference.py          # Artefacto FloodModel: árboles por lotes / DeepLab ONNX con overlap
 │   ├── postproc.py           # Agua permanente, filtro mediana, área mínima, poligonizar
-│   └── analytics.py          # Hectáreas (en CRS métrico!), zonal stats, desfase S1–S2
-├── ai/                       # Clientes LLM (BYOK + OpenAI-compat) y herramientas acotadas
+│   └── analytics.py          # Hectáreas (CRS métrico), zonal stats, focos críticos, desfase S1–S2
+├── ai/                       # Módulo extensible de IA (agnóstico de UI):
+│   ├── security.py           # Anti-SSRF, política APP_MODE, redacción de keys, sanitización
+│   ├── providers.py          # BaseLLMProvider + Anthropic, OpenAI-compat (Gemini/OpenRouter/Groq/Custom), Ollama local
+│   ├── tools.py              # ToolRegistry acotado + persistencia automática en SQLite `tool_calls`
+│   └── agent.py              # FloodAssistant (loop acotado de herramientas + fallback para modelos locales)
 ├── plugins/                  # Extensiones opcionales (solo APP_MODE=local)
-├── training/                 # Scripts genéricos de EDA, baseline, árboles y Colab DL
-├── models/                   # Metadatos/manifests; pesos en Hugging Face Hub
+├── training/                 # Scripts genéricos de EDA, baseline, terreno, árboles y Colab DL
+├── models/                   # Metadatos/manifests (.json); pesos en Hugging Face Hub
 ├── data/                     # flood.db, stacks demo precargados, salidas (ignorado en git)
 ├── dataset/                  # Sen1Floods11 local (ignorado en git)
 ├── _legacy/                  # Código y modelos antiguos archivados (ignorado en git)

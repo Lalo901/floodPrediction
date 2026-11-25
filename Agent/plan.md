@@ -17,10 +17,10 @@
 - [x] Crear entorno único Python 3.12 con `uv` (`pyproject.toml` + `.venv` instalado y verificado)
 - [x] Implementar `core/db.py` (esquema SQLite) y poblar tabla `events` desde `dataset/Sen1Floods11_Metadata.geojson` (12 eventos)
 - [x] Crear `Dockerfile` + `README.md` (front matter HF Space) + `app/main.py` ("hola mundo" Streamlit)
-- [ ] Subir a GitHub y desplegar Space "hola mundo" en Hugging Face
+- [x] Subir repo limpio a GitHub (`origin/main`) *(deploy de Space unificado en Fase 4 Bloque 2)*
 - [x] Registrar proyecto GCP (`flood-mapper-mvp`) en Earth Engine y probar autenticación local
 
-**Entregable:** Repo limpio en GitHub, Space vivo en Docker, DB `data/flood.db` con eventos cargados.
+**Entregable:** Repo limpio en GitHub, DB `data/flood.db` con eventos cargados. **(Fase 0 COMPLETADA; deploy Space pasa a Fase 4 Bloque 2)**
 
 ---
 
@@ -65,7 +65,7 @@
 - [x] Implementar `core/postproc.py` (enmascarado de `NaN`, resta de agua permanente, filtro mediana, área mínima, poligonización a GeoPackage/GeoJSON)
 - [x] Implementar `core/analytics.py` (reproyección automática a UTM para **hectáreas exactas**, zonal stats de `HAND`/`Slope`/`DEM_rel`, desfase S1–S2 y bloqueo Config B)
 - [x] Implementar `core/data.py` unificado (`SceneBundle`: Offline Sen1Floods11, Subida GeoTIFF y GEE en vivo)
-- [x] Validar pipeline completo (`data -> features -> inference -> postproc -> analytics -> export`) con `pytest` (`8 passed`, `Bolivia_103757` IoU `0.9037`)
+- [x] Validar pipeline completo (`data -> features -> inference -> postproc -> analytics -> export`) con `pytest` (`12 passed`, `ruff` 0 avisos)
 - [x] Construir `app/main.py` + `app/layers.py` en Streamlit + `streamlit-folium`:
   - [x] Modo **offline** (selector de evento/split Sen1Floods11, selector de modelo, capas conmutables, metadatos obligatorios siempre visibles, Flood IoU en vivo)
   - [x] Subida de GeoTIFF propio
@@ -84,10 +84,11 @@
 
 **Objetivo:** Asistente con herramientas acotadas, despliegue reproducible en Hugging Face Space y defensa ensayada.
 
-- [ ] Implementar `ai/` con 1 proveedor API BYOK (Anthropic) + endpoint compatible OpenAI (Ollama local); *(Gemini opcional / corte #3)*
-- [ ] Implementar herramientas acotadas sobre análisis guardados en SQLite (`summary`, `area_by_class`, `zonal_stats`, `filter_min_area`, `compare_with_model`, `export`) con log en `tool_calls`
-- [ ] Aviso de privacidad cuando se usa proveedor externo; nunca loguear ni persistir API keys
-- [ ] Subir pesos finales a Hugging Face Hub y cargar en arranque / bajo demanda
+- [x] Implementar módulo desacoplado `ai/` (`security.py`, `providers.py`, `tools.py`, `agent.py`) + `app/assistant_panel.py` acoplado a la derecha con scroll independiente, pre-configuración previa a detección, selector de imagen procesada (<=512 px), soporte multi-proveedor BYOK y Ollama/LM Studio local (`disable_thinking` para Gemma 4, bloqueado en `APP_MODE=space`)
+- [x] Implementar 7 herramientas acotadas en whitelist (`get_analysis_summary`, `get_top_hotspots`, `get_zonal_stats`, `filter_by_min_area`, `compare_models`, `list_registered_models`, `get_export_info`) con log en SQLite `tool_calls` y fallback automático (texto + visión)
+- [x] Rediseño UX GIS de escritorio sin iconos (`app/main.py`, `app/plugins_panel.py`, `core/exports_gis.py`, `core/geocoding.py`, `plugins/manager.py`): mapa base siempre visible desde inicio (`Satélite | Calles | Relieve | Oscuro`), buscador país/ciudad/coords, LayerControl compacto con scroll, opacidad rápida, enfoque de Focos #1–#5, menús desplegables uniformes (`Herramientas`, `Complementos`, `Ayuda`), conectores QGIS/MapLibre/Buffer UTM/Reporte `.md`, administrador open-source con lista blanca (`APP_MODE=local`) e `Historial` clicable con `Cargar en el Mapa` sin duplicar SQLite
+- [x] Controles de seguridad y pruebas: anti-SSRF, path-traversal guard en descargas del historial, lista blanca estricta de plugins, API keys solo en memoria de sesión + redacción en errores, caché de overlays/buffers, `pytest` (`26 passed`) y `ruff` (`0` avisos)
+- [ ] Subir pesos finales + Demo Pack a Hugging Face Hub y cargar en arranque (`core/bootstrap.py`)
 - [ ] Configurar GitHub Actions -> Hugging Face Space y secrets del Space
 - [ ] Medir tiempos reales de inferencia y RAM en CPU del Space gratuito
 

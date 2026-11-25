@@ -10,7 +10,7 @@ Manual práctico para operar la aplicación web **Flood Mapper MVP** (Streamlit)
 
 La pantalla se divide en dos zonas:
 - **Panel izquierdo (Sidebar):** configuración paso a paso (**1. Fuente de Datos → 2. Modelo → 3. Postproceso**).
-- **Panel principal:** 3 pestañas (**🗺️ Mapa y Resultados**, **📊 Comparativa de Modelos** y **🕒 Historial (SQLite)**).
+- **Panel principal:** 4 pestañas (**🗺️ Mapa y Resultados**, **🤖 Asistente IA**, **📊 Comparativa de Modelos** y **🕒 Historial (SQLite)**).
 
 ---
 
@@ -101,7 +101,22 @@ Puedes encender y apagar cada capa individualmente:
 
 ---
 
-## 5. Pestaña "📊 Comparativa de Modelos"
+## 5. Pestaña "🤖 Asistente IA" (Opcional)
+
+El asistente viene **desactivado por defecto** y puedes encenderlo con el interruptor **Activar Asistente de IA** una vez que ejecutaste un análisis.
+
+- **Proveedores soportados:**
+  - **Local (solo en `APP_MODE=local`):** **Ollama** (detecta automáticamente tus modelos instalados vía `http://localhost:11434/api/tags`) y **LM Studio / vLLM**. Tus datos **nunca salen de tu equipo**.
+  - **Externos BYOK (clave propia):** **Anthropic Claude**, **Google Gemini**, **OpenAI**, **OpenRouter**, **Groq** y **cualquier endpoint OpenAI-compatible HTTPS** (DeepSeek, Mistral, Together, etc.).
+- **Privacidad y seguridad:**
+  - Las API keys viven **únicamente en la memoria de la sesión** (nunca en `data/flood.db`, archivos ni logs) y tienen botón `🧹 Borrar`.
+  - Para proveedores externos se exige confirmación explícita de privacidad.
+  - **Sin ejecución libre de código:** el asistente solo puede invocar 7 herramientas acotadas (`get_analysis_summary`, `get_top_hotspots`, `get_zonal_stats`, `filter_by_min_area`, `compare_models`, `list_registered_models`, `get_export_info`) y nunca recibe rasters crudos.
+  - Cada llamada queda registrada en la tabla **`tool_calls`** de SQLite y visible en un desplegable debajo de cada respuesta.
+
+---
+
+## 6. Pestaña "📊 Comparativa de Modelos"
 
 Muestra la tabla oficial registrada en SQLite (`models`) con las métricas obtenidas durante la evaluación offline:
 - **`Test IoU` (columna principal de referencia):** desempeño sobre 90 chips nunca vistos en entrenamiento ni tuning.
@@ -112,7 +127,7 @@ Muestra la tabla oficial registrada en SQLite (`models`) con las métricas obten
 
 ---
 
-## 6. Pestaña "🕒 Historial (SQLite)"
+## 7. Pestaña "🕒 Historial (SQLite)"
 
 Cada análisis ejecutado se registra automáticamente en la base de datos local `data/flood.db` (tabla `analyses`), guardando fecha de ejecución, evento, fechas satelitales, cobertura de nubes, modelo utilizado, hectáreas inundadas, agua permanente y `live_iou` (si aplica).
 
@@ -120,7 +135,7 @@ Cada análisis ejecutado se registra automáticamente en la base de datos local 
 
 ---
 
-## 7. Inicio rápido en 3 pasos (para un usuario nuevo)
+## 8. Inicio rápido en 3 pasos (para un usuario nuevo)
 
 1. En **1. Fuente de Datos**, deja **Offline (Sen1Floods11)** → Split `bolivia` → Chip `Bolivia_103757`.
 2. En **2. Modelo**, elige **`deeplabv3plus_A`** (solo SAR + Terreno) o **`rf_B`** (SAR + S2 + Terreno) y pulsa **🚀 Ejecutar Detección**.

@@ -1,6 +1,7 @@
 # Auditoría Técnica, Científica y de Seguridad — Flood Mapper MVP
 
-> **Fecha:** 2026-11-23 | **Commit auditado:** `137b905` (`main`) | **Alcance:** Todos los `.md`, `core/`, `app/`, `training/`, `tests/`, `Dockerfile`, `pyproject.toml`, `.gitignore`, `.dockerignore`, `data/flood.db`, métricas generadas e historial completo de `git`.
+> **Fecha inicial:** 2026-11-23 | **Commit auditado:** `137b905` (`main`)
+> **Estado de remediación (`2026-11-24`, commit `9f11ddb`):** ✅ Resueltos hallazgos 1.2, 1.3, 2.1–2.5, 3.1–3.4 y §6 (higiene de rutas/Project ID/sanitización). ⏳ Único bloqueante abierto para Fase 4 Bloque 2: `1.1` (`core/bootstrap.py` + pesos/Demo Pack en Hugging Face Hub + prueba de `docker build`).
 
 ---
 

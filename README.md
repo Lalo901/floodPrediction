@@ -93,9 +93,9 @@ docker run -p 8501:8501 -e APP_MODE=local flood-mapper
 │   ├── plan.md               # Plan por fases y estado actual
 │   ├── decisions.md          # Bitácora de decisiones y resultados
 │   └── auditoria.md          # Auditoría técnica, científica y de seguridad
-├── app/                      # Interfaz Streamlit + streamlit-folium
+├── app/                      # Interfaz Streamlit + streamlit-folium (main, layers, assistant_panel)
 ├── core/                     # db, registry, metrics, features, data, inference, postproc, analytics
-├── ai/                       # Asistente IA con herramientas acotadas (Fase 4)
+├── ai/                       # Módulo extensible de IA (security, providers, tools, agent) — BYOK + Ollama local
 ├── training/                 # EDA, baseline Otsu, paridad GEE, terreno, árboles y script Colab DL
 ├── tests/                    # Suite pytest (unitarios + integración E2E)
 ├── Dockerfile
