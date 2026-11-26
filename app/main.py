@@ -618,11 +618,16 @@ def _resolve_model_for_live_scene(
     b_msg: str,
 ) -> dict[str, Any]:
     if chosen["config"] == "B" and not b_ok:
-        st.warning(
-            f"`{chosen['name']}` bloqueado en escena en vivo ({b_msg}). "
-            "Usando fallback automático Config A."
+        same_family_a = next(
+            (m for m in all_models if m["config"] == "A" and m.get("family") == chosen.get("family")),
+            None,
         )
-        return next((m for m in all_models if m["config"] == "A"), all_models[0])
+        fallback = same_family_a or next((m for m in all_models if m["config"] == "A"), all_models[0])
+        st.info(
+            f"`{chosen['name']}` omitido por nubes/desfase ({b_msg}). "
+            f"Usando automáticamente **`{fallback['name']}`** (Config A — SAR penetra nubes)."
+        )
+        return fallback
     return chosen
 
 
@@ -984,24 +989,29 @@ def _render_map_workspace(
                 except Exception as exc:  # noqa: BLE001
                     st.error(f"Error descargando/procesando desde GEE: {exc}")
 
-        view_tag = (
-            f"{active_basemap}_{geo_target['lat']:.4f}_{geo_target['lon']:.4f}"
-            if geo_target is not None
-            else f"{active_basemap}_default"
-        )
-        draw_map = _build_base_explorer_map(
-            active_basemap=active_basemap,
-            enable_draw=True,
-            geo_target=geo_target,
-        )
-        draw_out = st_folium(draw_map, height=540, width=None, key=f"gee_draw_map_{view_tag}")
-        last_drawn = (draw_out or {}).get("last_active_drawing")
-        if (
-            last_drawn
-            and "geometry" in last_drawn
-            and st.session_state.get("gee_polygon") != last_drawn["geometry"]
-        ):
-            st.session_state["gee_polygon"] = last_drawn["geometry"]
+        if st.session_state.get("last_result") is None:
+            view_tag = (
+                f"{active_basemap}_{geo_target['lat']:.4f}_{geo_target['lon']:.4f}"
+                if geo_target is not None
+                else f"{active_basemap}_default"
+            )
+            draw_map = _build_base_explorer_map(
+                active_basemap=active_basemap,
+                enable_draw=True,
+                geo_target=geo_target,
+            )
+            draw_out = st_folium(draw_map, height=540, width=None, key=f"gee_draw_map_{view_tag}")
+            last_drawn = (draw_out or {}).get("last_active_drawing")
+            if (
+                last_drawn
+                and "geometry" in last_drawn
+                and st.session_state.get("gee_polygon") != last_drawn["geometry"]
+            ):
+                st.session_state["gee_polygon"] = last_drawn["geometry"]
+                st.rerun()
+        elif st.button("Dibujar nuevo polígono (GEE)", key="gee_redraw_btn"):
+            st.session_state["last_result"] = None
+            st.session_state["last_result_2"] = None
             st.rerun()
 
     res = st.session_state.get("last_result")
