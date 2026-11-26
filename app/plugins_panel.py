@@ -180,7 +180,7 @@ def render_plugins_popover_content(*, app_mode: str) -> None:
 
     with tab_explore:
         if app_mode != "local":
-            st.caption("Modo nube (APP_MODE=space): instalación bloqueada por seguridad.")
+            st.caption(f"Modo público (`APP_MODE={app_mode}`): instalación bloqueada por seguridad.")
         s2, c2 = st.columns([1.7, 1.2])
         q_exp = s2.text_input(
             "Buscar en catálogo",

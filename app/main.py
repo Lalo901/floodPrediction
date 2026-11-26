@@ -55,6 +55,7 @@ from core.analytics import (
 )
 from core.data import (
     SceneBundle,
+    SlidingWindowRateLimiter,
     fetch_gee_scene,
     gee_is_configured,
     list_gee_s1_scenes,
@@ -175,6 +176,12 @@ def _cached_load_model(model_name: str):
 @st.cache_resource(max_entries=8)
 def _cached_load_offline_scene(stem: str) -> SceneBundle:
     return load_offline_scene(stem, DEFAULT_DB_PATH)
+
+
+@st.cache_resource
+def _get_gee_rate_limiter() -> SlidingWindowRateLimiter:
+    max_calls = int(os.getenv("GEE_MAX_DOWNLOADS_PER_10MIN", "5"))
+    return SlidingWindowRateLimiter(max_calls=max_calls, window_seconds=600.0)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -925,10 +932,25 @@ def _render_map_workspace(
 
         scenes_found = st.session_state.get("gee_scenes", [])
         if scenes_found and not poly_too_big:
+            gee_limiter = _get_gee_rate_limiter()
+            if APP_MODE != "local":
+                st.caption(
+                    f"Cuota GEE compartida: {gee_limiter.remaining()}/{gee_limiter.max_calls} "
+                    "descargas disponibles en esta ventana de 10 min."
+                )
             s_pick, s_run = st.columns([2.2, 1.4], vertical_alignment="bottom")
             scene_opts = {f"{s['date']} ({s['orbit']})": s for s in scenes_found}
             pick = s_pick.selectbox("Escena Sentinel-1 encontrada", list(scene_opts.keys()), key="gee_pick_sc")
             if s_run.button("Descargar GEE y ejecutar", type="primary", width="stretch", key="gee_run_btn"):
+                if APP_MODE != "local":
+                    allowed, retry_s = gee_limiter.try_acquire()
+                    if not allowed:
+                        mins, secs = divmod(retry_s, 60)
+                        st.warning(
+                            f"Límite de protección de cuota alcanzado (máx. {gee_limiter.max_calls} "
+                            f"descargas GEE cada 10 min). Intenta nuevamente en {mins} min {secs} s."
+                        )
+                        return
                 sc_meta = scene_opts[pick]
                 try:
                     with st.spinner("Descargando S1 + Slope/HAND + S2 (Cloud Score+) desde GEE..."):

@@ -143,8 +143,8 @@ def render_assistant_dock(
     with st.expander("Configuración del proveedor", expanded=default_cfg_open):
         if app_mode != "local":
             st.caption(
-                "Modo nube (APP_MODE=space): modelos locales (Ollama/LM Studio) "
-                "deshabilitados. Usa un proveedor BYOK."
+                f"Modo público (`APP_MODE={app_mode}`): modelos locales (Ollama/LM Studio) "
+                "deshabilitados por seguridad. Usa un proveedor BYOK con tu propia API key."
             )
 
         chosen_label = st.selectbox("Proveedor", list(preset_by_label.keys()), key="ai_provider_label")

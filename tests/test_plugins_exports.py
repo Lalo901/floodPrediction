@@ -253,3 +253,34 @@ def test_history_safe_output_file_blocks_path_traversal(tmp_path, monkeypatch) -
     assert app_main._safe_output_file(str(secret_file)) is None
     assert app_main._safe_output_file("/etc/passwd") is None
     assert app_main._safe_output_file(str(fake_outputs / ".." / "secret.env")) is None
+
+
+def test_enable_gee_false_disables_init_gee(monkeypatch) -> None:
+    import core.data as core_data
+
+    monkeypatch.setattr(core_data, "_EE_INITIALIZED", False)
+    monkeypatch.setenv("ENABLE_GEE", "false")
+    assert core_data.init_gee() is False
+    assert core_data.gee_is_configured() is False
+
+
+def test_gee_sliding_window_rate_limiter() -> None:
+    from core.data import SlidingWindowRateLimiter
+
+    limiter = SlidingWindowRateLimiter(max_calls=5, window_seconds=600.0)
+    t0 = 1000.0
+    for i in range(5):
+        allowed, retry = limiter.try_acquire(now=t0 + i)
+        assert allowed is True
+        assert retry == 0
+    assert limiter.remaining(now=t0 + 10) == 0
+
+    # 6th call inside 10-minute window must be blocked with positive retry_after
+    allowed, retry = limiter.try_acquire(now=t0 + 10)
+    assert allowed is False
+    assert 585 <= retry <= 595
+
+    # After 600s elapse from first call, slot frees up cleanly
+    allowed_after, retry_after = limiter.try_acquire(now=t0 + 601.0)
+    assert allowed_after is True
+    assert retry_after == 0

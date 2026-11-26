@@ -32,6 +32,9 @@ data/colab/
 .env
 .env.*
 !.env.example
+deploy/cloudflare/
+scripts/run_tunnel_native.sh
+docker-compose.tunnel.yml
 *service-account*.json
 *gee*.json
 credentials*.json

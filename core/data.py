@@ -278,9 +278,51 @@ def load_uploaded_geotiff(
 _EE_INITIALIZED = False
 
 
+class SlidingWindowRateLimiter:
+    """Thread-safe sliding-window rate limiter to protect shared GEE quotas in public deployments."""
+
+    def __init__(self, max_calls: int = 5, window_seconds: float = 600.0) -> None:
+        import threading
+        from collections import deque
+
+        self.max_calls = max(1, int(max_calls))
+        self.window_seconds = max(1.0, float(window_seconds))
+        self._timestamps: deque[float] = deque()
+        self._lock = threading.Lock()
+
+    def _prune(self, now: float) -> None:
+        cutoff = now - self.window_seconds
+        while self._timestamps and self._timestamps[0] <= cutoff:
+            self._timestamps.popleft()
+
+    def remaining(self, now: float | None = None) -> int:
+        import time
+
+        ts = time.monotonic() if now is None else now
+        with self._lock:
+            self._prune(ts)
+            return max(0, self.max_calls - len(self._timestamps))
+
+    def try_acquire(self, now: float | None = None) -> tuple[bool, int]:
+        """Attempt to consume 1 slot. Returns `(allowed, retry_after_seconds)`."""
+        import math
+        import time
+
+        ts = time.monotonic() if now is None else now
+        with self._lock:
+            self._prune(ts)
+            if len(self._timestamps) < self.max_calls:
+                self._timestamps.append(ts)
+                return True, 0
+            retry_after = max(1, math.ceil(self._timestamps[0] + self.window_seconds - ts))
+            return False, retry_after
+
+
 def init_gee() -> bool:
     """Initialize Earth Engine using service account JSON (Space) or local OAuth credentials."""
     global _EE_INITIALIZED
+    if os.getenv("ENABLE_GEE", "true").strip().lower() in ("0", "false", "no", "off"):
+        return False
     if _EE_INITIALIZED:
         return True
     try:
@@ -288,6 +330,8 @@ def init_gee() -> bool:
         from dotenv import load_dotenv
 
         load_dotenv(PROJECT_ROOT / ".env")
+        if os.getenv("ENABLE_GEE", "true").strip().lower() in ("0", "false", "no", "off"):
+            return False
         project_id = os.getenv("GEE_PROJECT_ID")
         sa_json_str = os.getenv("GEE_SERVICE_ACCOUNT_JSON")
         sa_key_path = os.getenv("GEE_SERVICE_ACCOUNT_KEY")

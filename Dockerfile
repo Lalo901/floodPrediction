@@ -24,6 +24,7 @@ WORKDIR /app
 COPY pyproject.toml ./
 RUN uv pip install --system --no-cache ".[gee,ai]"
 
+COPY .streamlit ./.streamlit
 COPY app ./app
 COPY core ./core
 COPY ai ./ai
@@ -37,9 +38,10 @@ USER user
 
 EXPOSE 8501
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8501/_stcore/health || exit 1
+
 CMD ["streamlit", "run", "app/main.py", \
      "--server.port=8501", \
      "--server.address=0.0.0.0", \
-     "--server.headless=true", \
-     "--server.enableCORS=false", \
-     "--server.enableXsrfProtection=false"]
+     "--server.headless=true"]
